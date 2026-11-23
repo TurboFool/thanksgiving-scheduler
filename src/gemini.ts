@@ -152,6 +152,8 @@ export const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
 ] as const;
 
+const GEMINI_TIMEOUT_MS = 35_000;
+
 async function callGeminiWithFallback(
   apiKey: string,
   body: Record<string, unknown>
@@ -161,23 +163,46 @@ async function callGeminiWithFallback(
 
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      window.clearTimeout(timeoutId);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        lastError = `Request to ${model} timed out after ${GEMINI_TIMEOUT_MS / 1000}s.`;
+        continue;
+      }
+      const msg = err instanceof Error ? err.message : 'Network error';
+      lastError = `Network error calling ${model}: ${msg}`;
+      continue;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
 
     if (res.ok) {
       const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const candidate = data?.candidates?.[0];
+      const text = candidate?.content?.parts?.[0]?.text;
       if (!text) {
-        throw new Error('Gemini returned an empty response.');
+        const reason =
+          candidate?.finishReason || data?.promptFeedback?.blockReason || 'UNKNOWN';
+        throw new Error(
+          `Gemini (${model}) returned an empty response (reason: ${reason}). Try simplifying your notes or regenerating fresh.`
+        );
       }
       return text;
     }
 
     const errText = await res.text();
-    lastError = `Gemini API error (${res.status} on ${model}): ${errText.slice(0, 200)}`;
+    lastError = `Gemini API error (${res.status} on ${model}): ${errText.slice(0, 220)}`;
 
     // Retry with next model on transient overload (503), rate limit (429), or unavailable model (404)
     if (res.status === 503 || res.status === 429 || res.status === 404) {

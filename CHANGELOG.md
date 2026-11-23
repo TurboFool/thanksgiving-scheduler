@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.6.2] — 2026-11-23
+
+### Fixed & Added
+- **Gemini Request Timeout & Diagnostics (`gemini.ts`)**: Added a 35-second per-model `AbortController` timeout to `callGeminiWithFallback` so stalled network/API requests never hang indefinitely on `Processing...`. Also added detailed network error reporting and `finishReason` / `blockReason` diagnostics when a response is empty.
+- **Always-Visible Error Banner & Elapsed Timer (`MealItemModal.tsx`)**: Added a dismissible error alert at the top of the dish modal (so errors from Auto-Fill, Pull Recipe, Scaling Review, or Step Processing are immediately visible regardless of scroll position) and live elapsed-seconds feedback (`Processing... (5s)`).
+
+---
+
 ## [2.6.1] — 2026-11-23
 
 ### Fixed

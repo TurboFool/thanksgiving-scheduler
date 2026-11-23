@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   X,
   Sparkles,
@@ -122,6 +122,20 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const [scaleReview, setScaleReview] = useState<ScaledRecipeReviewResult | null>(null);
   const [appliedScaleUpdates, setAppliedScaleUpdates] = useState(false);
   const [savedToLibMsg, setSavedToLibMsg] = useState(false);
+  const [aiElapsedSec, setAiElapsedSec] = useState(0);
+
+  const anyAiBusy = aiLoading || quickFillLoading || urlLoading || scaleLoading;
+  useEffect(() => {
+    if (!anyAiBusy) {
+      setAiElapsedSec(0);
+      return;
+    }
+    const start = Date.now();
+    const id = window.setInterval(() => {
+      setAiElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [anyAiBusy]);
 
   const handleAutoFillDish = async () => {
     setAiError(null);
@@ -450,6 +464,37 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
+            {aiError && (
+              <div
+                role="alert"
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--status-crimson-soft, #fde8e8)',
+                  border: '1px solid var(--status-crimson)',
+                  color: 'var(--status-crimson)',
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                  <span>{aiError}</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{ padding: '0 4px', fontSize: '0.78rem', color: 'var(--status-crimson)' }}
+                  onClick={() => setAiError(null)}
+                  aria-label="Dismiss error"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             {isNew && !isLibraryMode && libraryItems.length > 0 && (
               <div
                 style={{
@@ -557,7 +602,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                     disabled={quickFillLoading}
                   >
                     <Sparkles size={12} />
-                    {quickFillLoading ? 'Filling...' : 'Auto-Fill Fields'}
+                    {quickFillLoading ? `Filling... (${aiElapsedSec}s)` : 'Auto-Fill Fields'}
                   </button>
                 </div>
               </div>
@@ -635,7 +680,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                         title="Extract ingredients and instructions from this URL using Gemini"
                       >
                         <Download size={13} />
-                        {urlLoading ? 'Pulling...' : 'Pull Recipe'}
+                        {urlLoading ? `Pulling... (${aiElapsedSec}s)` : 'Pull Recipe'}
                       </button>
                       <a
                         href={sourceUrl.trim()}
@@ -701,7 +746,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                     title="Ask Gemini to check pan sizes, cook times, and ratios for this portion scale"
                   >
                     <Sparkles size={12} color="var(--accent-sage)" />
-                    {scaleLoading ? 'Reviewing...' : `Review ${portionMultiplier}X with Gemini`}
+                    {scaleLoading ? `Reviewing... (${aiElapsedSec}s)` : `Review ${portionMultiplier}X with Gemini`}
                   </button>
                 </div>
 
@@ -961,7 +1006,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                   >
                     <Sparkles size={14} />
                     {aiLoading
-                      ? 'Processing...'
+                      ? `Processing... (${aiElapsedSec}s)`
                       : aiProcessedAt || steps.length > 0
                       ? 'Update Steps from Notes & Guidance'
                       : 'Process Notes & Generate Steps'}
