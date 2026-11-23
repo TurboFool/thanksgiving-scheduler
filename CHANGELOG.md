@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.6.1] — 2026-11-23
+
+### Fixed
+- **Same-Appliance Concurrent Vessel Sharing (`scheduler.ts`, `GanttTimeline.tsx`)**: Steps with `relativeDeps` (e.g., *"Add apple slices 60m before end of Heat cider"* on a 1-pot Slow Cooker) now share their anchor step's appliance capacity in `findValidPlacement` instead of being blocked and pushed until after the anchor step finishes. `GanttTimeline` also expands the lane height to stack concurrent shared-vessel steps cleanly.
+
+---
+
 ## [2.6.0] — 2026-11-23
 
 ### Added

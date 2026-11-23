@@ -19,7 +19,8 @@ function findValidPlacement(
   slots: number,
   temp: number | undefined,
   appliance: Appliance,
-  existing: Interval[]
+  existing: Interval[],
+  sharedAnchorStepIds?: Set<string>
 ): { valid: boolean; row: number } {
   if (slots > appliance.capacity) {
     // Even if misconfigured, allow at row 0 so scheduler never infinite-loops
@@ -39,16 +40,24 @@ function findValidPlacement(
   }
 
   for (const t of checkpoints) {
-    let usedSlots = slots;
+    let sharesAnchorAtT = false;
+    let usedSlots = 0;
     const tempsAtT: number[] = temp !== undefined ? [temp] : [];
 
     for (const iv of overlapping) {
       if (iv.start <= t && iv.end > t) {
         usedSlots += iv.slots;
+        if (sharedAnchorStepIds?.has(iv.stepId)) {
+          sharesAnchorAtT = true;
+        }
         if (iv.temp !== undefined) {
           tempsAtT.push(iv.temp);
         }
       }
+    }
+
+    if (!sharesAnchorAtT) {
+      usedSlots += slots;
     }
 
     if (usedSlots > appliance.capacity) {
@@ -67,7 +76,8 @@ function findValidPlacement(
   // Find lowest non-overlapping visual row
   const usedRows = new Set<number>();
   for (const iv of overlapping) {
-    for (let r = iv.row; r < iv.row + iv.slots; r++) {
+    const visualSlots = Math.max(1, iv.slots);
+    for (let r = iv.row; r < iv.row + visualSlots; r++) {
       usedRows.add(r);
     }
   }
@@ -489,6 +499,10 @@ export function computeSchedule(
       }
       const sortedCandidates = Array.from(candidates).sort((a, b) => a - b);
 
+      const sharedAnchors = step.relativeDeps?.length
+        ? new Set(step.relativeDeps.map((r) => r.stepId))
+        : undefined;
+
       for (const candStart of sortedCandidates) {
         const candEnd = candStart + duration;
         const check = findValidPlacement(
@@ -497,7 +511,8 @@ export function computeSchedule(
           step.slotsRequired,
           step.temperature,
           app,
-          appIntervals
+          appIntervals,
+          sharedAnchors
         );
         if (check.valid) {
           if (candStart < bestStart) {

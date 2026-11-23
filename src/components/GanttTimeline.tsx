@@ -158,7 +158,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
       for (const s of appSteps) {
         maxRowUsed = Math.max(maxRowUsed, s.laneRow + Math.max(1, s.slotsRequired));
       }
-      const rows = Math.max(1, Math.min(app.capacity, maxRowUsed));
+      const rows = Math.max(1, maxRowUsed);
       const height = rows * ROW_HEIGHT + LANE_PAD_Y * 2;
       laneMeta.set(app.id, { top: yCursor, height, rows });
 
