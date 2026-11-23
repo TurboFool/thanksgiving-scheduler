@@ -122,19 +122,19 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const [scaleReview, setScaleReview] = useState<ScaledRecipeReviewResult | null>(null);
   const [appliedScaleUpdates, setAppliedScaleUpdates] = useState(false);
   const [savedToLibMsg, setSavedToLibMsg] = useState(false);
-  const [aiElapsedSec, setAiElapsedSec] = useState(0);
+  const [rawElapsedSec, setRawElapsedSec] = useState(0);
 
   const anyAiBusy = aiLoading || quickFillLoading || urlLoading || scaleLoading;
+  const aiElapsedSec = anyAiBusy ? rawElapsedSec : 0;
   useEffect(() => {
-    if (!anyAiBusy) {
-      setAiElapsedSec(0);
-      return;
-    }
+    if (!anyAiBusy) return;
     const start = Date.now();
     const id = window.setInterval(() => {
-      setAiElapsedSec(Math.floor((Date.now() - start) / 1000));
+      setRawElapsedSec(Math.floor((Date.now() - start) / 1000));
     }, 1000);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+    };
   }, [anyAiBusy]);
 
   const handleAutoFillDish = async () => {
