@@ -15,8 +15,8 @@ interface GanttTimelineProps {
   onStartStep: (id: string) => void;
 }
 
-const ROW_HEIGHT = 48;
-const LANE_PAD_Y = 10;
+const ROW_HEIGHT = 58;
+const LANE_PAD_Y = 8;
 
 export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   appliances,
@@ -29,7 +29,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   onSelectStep,
   onStartStep,
 }) => {
-  const [pxPerMin, setPxPerMin] = useState(3.2);
+  const [pxPerMin, setPxPerMin] = useState(4.6);
 
   // Timeline bounds: pad 30m before earliest/now and 30m after projected/target dinner
   const startBound = useMemo(() => {
@@ -73,7 +73,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
 
       for (const s of appSteps) {
         const x = (s.startMin - startBound) * pxPerMin;
-        const w = Math.max(26, (s.endMin - s.startMin) * pxPerMin);
+        const w = Math.max(32, (s.endMin - s.startMin) * pxPerMin);
         const slotSpan = Math.min(rows - s.laneRow, Math.max(1, s.slotsRequired));
         const y = yCursor + LANE_PAD_Y + s.laneRow * ROW_HEIGHT + 3;
         const h = slotSpan * ROW_HEIGHT - 6;
@@ -102,7 +102,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
             <button
               type="button"
               className="btn-icon"
-              onClick={() => setPxPerMin((p) => Math.max(1.5, p - 0.6))}
+              onClick={() => setPxPerMin((p) => Math.max(1.5, p - 0.8))}
               title="Zoom out"
             >
               <ZoomOut size={15} />
@@ -110,7 +110,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
             <button
               type="button"
               className="btn-icon"
-              onClick={() => setPxPerMin((p) => Math.min(7, p + 0.6))}
+              onClick={() => setPxPerMin((p) => Math.min(12, p + 0.8))}
               title="Zoom in"
             >
               <ZoomIn size={15} />
