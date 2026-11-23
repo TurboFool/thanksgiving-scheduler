@@ -17,6 +17,14 @@ export interface Appliance {
   color: string;
 }
 
+export type RelativeAnchor = 'after_start' | 'before_end' | 'after_end';
+
+export interface RelativeDependency {
+  stepId: string;
+  anchor: RelativeAnchor;
+  offsetMin: number;
+}
+
 export interface MealStep {
   id: string;
   title: string;
@@ -33,6 +41,8 @@ export interface MealStep {
   dependencies: string[];
   /** Step IDs that rely on this step finishing before they can start ("ready before") */
   readyBeforeIds: string[];
+  /** Optional time-relative concurrent dependencies (e.g., 60m before another step ends) */
+  relativeDeps?: RelativeDependency[];
   /** Whether this step must finish by target dinner time (default true) */
   mustFinishByDinner: boolean;
   /** True/undefined = needs a countdown timer; false = start-time alert only (e.g., peeling apples) */

@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.6.0] — 2026-11-23
+
+### Added
+- **Time-Relative / Concurrent Dependencies (`relativeDeps`)**: Steps can now be scheduled concurrently relative to the **start** or **end** of another ongoing step (`before_end`, `after_start`, or `after_end` with a minute offset — e.g., *"Start 60 min before end of Simmer Apple Cider"*).
+- **Live Cascading & Gantt Arrows**: Extending, starting late, or moving the anchor step automatically shifts any time-relative concurrent steps in both Planning and Execution modes, and draws dependency arrows in `GanttTimeline`.
+- **Step Editor & Gemini Support**: Added a **Time-Relative / Concurrent Timing** builder in `StepModal` and updated `gemini.ts` to parse and generate `relativeDeps`.
+
+---
+
 ## [2.5.2] — 2026-11-22
 
 ### Fixed

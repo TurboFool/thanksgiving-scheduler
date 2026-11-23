@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Trash2, Copy } from 'lucide-react';
-import type { Appliance, MealStep } from '../types';
+import { X, Trash2, Copy, Plus } from 'lucide-react';
+import type { Appliance, MealStep, RelativeAnchor, RelativeDependency } from '../types';
 
 interface StepModalProps {
   step: MealStep | null;
@@ -34,6 +34,7 @@ export const StepModal: React.FC<StepModalProps> = ({
   );
   const [dependencies, setDependencies] = useState<string[]>(step?.dependencies ?? []);
   const [readyBeforeIds, setReadyBeforeIds] = useState<string[]>(step?.readyBeforeIds ?? []);
+  const [relativeDeps, setRelativeDeps] = useState<RelativeDependency[]>(step?.relativeDeps ?? []);
   const [mustFinishByDinner, setMustFinishByDinner] = useState(step?.mustFinishByDinner ?? true);
   const [requiresTimer, setRequiresTimer] = useState(step?.requiresTimer !== false);
   const [pinnedStartMin, setPinnedStartMin] = useState<number | undefined>(step?.pinnedStartMin);
@@ -98,6 +99,7 @@ export const StepModal: React.FC<StepModalProps> = ({
       temperature: Number.isFinite(parsedTemp) ? parsedTemp : undefined,
       dependencies,
       readyBeforeIds,
+      relativeDeps: relativeDeps.length > 0 ? relativeDeps : undefined,
       mustFinishByDinner,
       requiresTimer,
       finishConstraint: step?.finishConstraint,
@@ -343,6 +345,127 @@ export const StepModal: React.FC<StepModalProps> = ({
 
               {otherSteps.length > 0 && (
                 <>
+                  <div
+                    className="form-field full"
+                    style={{
+                      padding: 10,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-canvas)',
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <label style={{ margin: 0 }}>
+                        Time-Relative / Concurrent Timing (optional — e.g., 60m before Cider finishes)
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+                        onClick={() =>
+                          setRelativeDeps((prev) => [
+                            ...prev,
+                            { stepId: otherSteps[0].id, anchor: 'before_end', offsetMin: 30 },
+                          ])
+                        }
+                      >
+                        <Plus size={12} /> Add Link
+                      </button>
+                    </div>
+                    {relativeDeps.length === 0 ? (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
+                        No concurrent relative links. Use this when a step should start mid-way through
+                        another running timer.
+                      </span>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {relativeDeps.map((rel, idx) => (
+                          <div
+                            key={`${rel.stepId}-${idx}`}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              flexWrap: 'wrap',
+                              fontSize: '0.78rem',
+                            }}
+                          >
+                            <span>Start</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={1440}
+                              value={rel.offsetMin}
+                              onChange={(e) =>
+                                setRelativeDeps((prev) =>
+                                  prev.map((r, i) =>
+                                    i === idx
+                                      ? { ...r, offsetMin: Math.max(0, Number(e.target.value) || 0) }
+                                      : r
+                                  )
+                                )
+                              }
+                              style={{ width: 64 }}
+                            />
+                            <span>min</span>
+                            <select
+                              value={rel.anchor}
+                              onChange={(e) =>
+                                setRelativeDeps((prev) =>
+                                  prev.map((r, i) =>
+                                    i === idx
+                                      ? { ...r, anchor: e.target.value as RelativeAnchor }
+                                      : r
+                                  )
+                                )
+                              }
+                              style={{ width: 'auto', minWidth: 120 }}
+                            >
+                              <option value="before_end">before end of</option>
+                              <option value="after_start">after start of</option>
+                              <option value="after_end">after end of</option>
+                            </select>
+                            <select
+                              value={rel.stepId}
+                              onChange={(e) =>
+                                setRelativeDeps((prev) =>
+                                  prev.map((r, i) =>
+                                    i === idx ? { ...r, stepId: e.target.value } : r
+                                  )
+                                )
+                              }
+                              style={{ flex: 1, minWidth: 140 }}
+                            >
+                              {otherSteps.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.title}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              title="Remove relative link"
+                              onClick={() =>
+                                setRelativeDeps((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="form-field full">
                     <label>Depends On (must finish BEFORE this starts)</label>
                     <div className="dep-checklist">

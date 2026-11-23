@@ -107,6 +107,35 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
       temperature: Number.isFinite(temp) ? temp : undefined,
       dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(String) : [],
       readyBeforeIds: Array.isArray(item.readyBeforeIds) ? item.readyBeforeIds.map(String) : [],
+      relativeDeps: Array.isArray(item.relativeDeps)
+        ? item.relativeDeps
+            .filter(
+              (
+                r: unknown
+              ): r is {
+                stepId: string;
+                anchor: 'after_start' | 'before_end' | 'after_end';
+                offsetMin: number;
+              } =>
+                Boolean(
+                  r &&
+                    typeof r === 'object' &&
+                    typeof (r as { stepId?: unknown }).stepId === 'string'
+                )
+            )
+            .map(
+              (r: {
+                stepId: string;
+                anchor: 'after_start' | 'before_end' | 'after_end';
+                offsetMin: number;
+              }) => ({
+                stepId: String(r.stepId),
+                anchor:
+                  r.anchor === 'after_start' || r.anchor === 'after_end' ? r.anchor : 'before_end',
+                offsetMin: Math.max(0, Number(r.offsetMin) || 0),
+              })
+            )
+        : undefined,
       mustFinishByDinner: item.mustFinishByDinner !== false,
       requiresTimer: item.requiresTimer !== false,
       notes: item.notes ? String(item.notes) : undefined,
@@ -328,6 +357,7 @@ ${aiGuidance}
 - Whenever Primary Notes, Recipe Instructions, or Direct User Instructions describe distinct phases with separate timings or actions (for example: "sauté 6-7 minutes, then stir in thickener/spices, then boil and stir 2 more minutes"), you MUST split them into SEPARATE sequential steps linked with "dependencies" (e.g., step-2 depends on step-1, step-3 depends on step-2) instead of merging them into one combined step.
 - Even if Current Steps previously had steps merged together, ALWAYS prefer the user's Primary Notes, Recipe Instructions, and Direct User Instructions.
 - Set "requiresTimer": false for untimed manual prep tasks (e.g., peeling/chopping apples, setting out ingredients) that only need a start-time alert without a countdown alarm; set "requiresTimer": true for active cooking/baking/simmering/boiling steps that need a countdown timer.
+- When a step must happen CONCURRENTLY relative to an ongoing timer (e.g., "add apples 1 hour before a 2-hour cider finishes" or "baste 30 min after roast starts"), do NOT put that timer in "dependencies" (which forces waiting until it ends); instead use "relativeDeps": [{ "stepId": "<target-id>", "anchor": "before_end" | "after_start" | "after_end", "offsetMin": 60 }].
 - Use "category:Oven" (or "" if unsure) for oven steps in multi-oven kitchens, and specific IDs like "stovetop" or "counter" for stovetop/counter prep.
 
 Dish Name: ${item.name}

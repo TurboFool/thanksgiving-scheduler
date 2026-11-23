@@ -139,12 +139,18 @@ export function computeSchedule(
     stepMap.set(s.id, s);
   }
 
-  // 1. Build unified DAG: prereqs[id] -> Set of step IDs that must finish before id
+  // 1. Build unified DAG:
+  //    - prereqs[id] / dependents[id]: finish-to-start links
+  //    - allPrereqs[id] / allDependents[id]: finish-to-start + relativeDeps (for topo order & arrows)
   const prereqs = new Map<string, Set<string>>();
   const dependents = new Map<string, Set<string>>();
+  const allPrereqs = new Map<string, Set<string>>();
+  const allDependents = new Map<string, Set<string>>();
   for (const s of rawSteps) {
     prereqs.set(s.id, new Set());
     dependents.set(s.id, new Set());
+    allPrereqs.set(s.id, new Set());
+    allDependents.set(s.id, new Set());
   }
 
   for (const s of rawSteps) {
@@ -152,12 +158,22 @@ export function computeSchedule(
       if (stepMap.has(depId) && depId !== s.id) {
         prereqs.get(s.id)!.add(depId);
         dependents.get(depId)!.add(s.id);
+        allPrereqs.get(s.id)!.add(depId);
+        allDependents.get(depId)!.add(s.id);
       }
     }
     for (const afterId of s.readyBeforeIds) {
       if (stepMap.has(afterId) && afterId !== s.id) {
         prereqs.get(afterId)!.add(s.id);
         dependents.get(s.id)!.add(afterId);
+        allPrereqs.get(afterId)!.add(s.id);
+        allDependents.get(s.id)!.add(afterId);
+      }
+    }
+    for (const rel of s.relativeDeps ?? []) {
+      if (stepMap.has(rel.stepId) && rel.stepId !== s.id) {
+        allPrereqs.get(s.id)!.add(rel.stepId);
+        allDependents.get(rel.stepId)!.add(s.id);
       }
     }
   }
@@ -165,7 +181,7 @@ export function computeSchedule(
   // 2. Topological Sort (Kahn's algorithm)
   const inDegree = new Map<string, number>();
   for (const s of rawSteps) {
-    inDegree.set(s.id, prereqs.get(s.id)!.size);
+    inDegree.set(s.id, allPrereqs.get(s.id)!.size);
   }
 
   const queue: string[] = [];
@@ -177,7 +193,7 @@ export function computeSchedule(
   while (queue.length > 0) {
     const curr = queue.shift()!;
     topoOrder.push(curr);
-    for (const next of dependents.get(curr) ?? []) {
+    for (const next of allDependents.get(curr) ?? []) {
       const deg = (inDegree.get(next) ?? 0) - 1;
       inDegree.set(next, deg);
       if (deg === 0) queue.push(next);
@@ -196,8 +212,8 @@ export function computeSchedule(
         laneRow: 0,
         slackMin: 0,
         isCritical: false,
-        effectivePrereqs: Array.from(prereqs.get(s.id) ?? []),
-        effectiveDependents: Array.from(dependents.get(s.id) ?? []),
+        effectivePrereqs: Array.from(allPrereqs.get(s.id) ?? []),
+        effectiveDependents: Array.from(allDependents.get(s.id) ?? []),
         isDelayed: false,
         delayMin: 0,
       })),
@@ -306,6 +322,31 @@ export function computeSchedule(
     idealIntervalsByApp.set(bestApp.id, targetIntervals);
   }
 
+  // Resolve time-relative concurrent dependencies in forward topo order for ideal plan
+  for (const id of topoOrder) {
+    const step = stepMap.get(id)!;
+    if (step.pinnedStartMin !== undefined || !step.relativeDeps?.length) continue;
+    const duration = Math.max(1, step.durationMin);
+    let relStart = -Infinity;
+    for (const rel of step.relativeDeps) {
+      const tStart = idealStart.get(rel.stepId);
+      const tEnd = idealEnd.get(rel.stepId);
+      if (tStart === undefined || tEnd === undefined) continue;
+      const offset = Math.max(0, rel.offsetMin);
+      const cand =
+        rel.anchor === 'before_end'
+          ? tEnd - offset
+          : rel.anchor === 'after_start'
+          ? tStart + offset
+          : tEnd + offset;
+      if (cand > relStart) relStart = cand;
+    }
+    if (relStart > -Infinity) {
+      idealStart.set(id, relStart);
+      idealEnd.set(id, relStart + duration);
+    }
+  }
+
   let suggestedStartMin = Infinity;
   for (const st of idealStart.values()) {
     if (st < suggestedStartMin) suggestedStartMin = st;
@@ -398,11 +439,30 @@ export function computeSchedule(
     let earliest =
       step.pinnedStartMin !== undefined
         ? step.pinnedStartMin
+        : step.relativeDeps?.length
+        ? nowMin
         : Math.max(idealStart.get(id)!, nowMin);
-    for (const pId of prereqs.get(id) ?? []) {
-      const pEnd = liveEnd.get(pId);
-      if (pEnd !== undefined && pEnd > earliest) {
-        earliest = pEnd;
+    if (step.pinnedStartMin === undefined) {
+      for (const pId of prereqs.get(id) ?? []) {
+        const pEnd = liveEnd.get(pId);
+        if (pEnd !== undefined && pEnd > earliest) {
+          earliest = pEnd;
+        }
+      }
+      for (const rel of step.relativeDeps ?? []) {
+        const tStart = liveStart.get(rel.stepId);
+        const tEnd = liveEnd.get(rel.stepId);
+        if (tStart === undefined || tEnd === undefined) continue;
+        const offset = Math.max(0, rel.offsetMin);
+        const cand =
+          rel.anchor === 'before_end'
+            ? tEnd - offset
+            : rel.anchor === 'after_start'
+            ? tStart + offset
+            : tEnd + offset;
+        if (cand > earliest) {
+          earliest = cand;
+        }
       }
     }
 
@@ -516,8 +576,8 @@ export function computeSchedule(
       laneRow: liveRow.get(s.id) ?? 0,
       slackMin,
       isCritical,
-      effectivePrereqs: Array.from(prereqs.get(s.id) ?? []),
-      effectiveDependents: Array.from(dependents.get(s.id) ?? []),
+      effectivePrereqs: Array.from(allPrereqs.get(s.id) ?? []),
+      effectiveDependents: Array.from(allDependents.get(s.id) ?? []),
       isDelayed: delayMin > 0,
       delayMin,
     };
