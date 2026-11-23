@@ -1188,15 +1188,6 @@ export function App() {
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={() => setShowSyncModal(true)}
-            title="Cloudflare R2/KV Sync"
-          >
-            <Cloud size={14} /> Sync
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-secondary"
             onClick={() => setShowApplianceModal(true)}
           >
             <SlidersHorizontal size={14} /> Appliances
@@ -1208,6 +1199,15 @@ export function App() {
             onClick={() => setShowGeminiModal(true)}
           >
             <Sparkles size={14} color="var(--accent-sage)" /> Gemini
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setShowSyncModal(true)}
+            title="Cloudflare R2/KV Sync"
+          >
+            <Cloud size={14} /> Sync
           </button>
 
           <button

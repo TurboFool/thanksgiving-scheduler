@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.4.1] — 2026-11-22
+
+### Changed
+- Moved the **Sync** button in the header toolbar to the immediate left of **Settings**.
+
+---
+
 ## [2.4.0] — 2026-11-22
 
 ### Added
