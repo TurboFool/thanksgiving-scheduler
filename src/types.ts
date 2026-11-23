@@ -123,6 +123,8 @@ export interface MealEvent {
   date?: string;
   targetDinnerMin: number;
   simulatedNowMin: number;
+  /** When true, Planning Mode uses simulatedNowMin instead of auto-following suggestedStartMin */
+  simTimeOverridden?: boolean;
   mealItems: MealItem[];
   appliancesOverride?: Appliance[] | null;
   updatedAt: number;
@@ -171,6 +173,8 @@ export interface ScheduleResult {
   dinnerDeltaMin: number;
   /** Earliest start time of any step */
   earliestStartMin: number;
+  /** Ideal earliest start time from Pass 1 (independent of current clock) */
+  suggestedStartMin: number;
   /** Cycle error if user created a circular dependency */
   cycleError: string | null;
 }

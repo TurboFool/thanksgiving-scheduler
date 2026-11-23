@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.4.0] — 2026-11-22
+
+### Added
+- **Planning vs. Execution Mode Switch**: Replaced the ambiguous `Sim` / `Live` toggle with a clear **Planning** | **Execution** segmented switch in both the header toolbar and `SettingsModal`.
+- **Auto-Default Sim Time to Suggested Start**: In **Planning** mode, the schedule is no longer constrained by the real-world clock, and **Sim Time** automatically defaults to `suggestedStartMin` (the earliest ideal start time across your chosen dishes). Manually scrubbing Sim Time (`-15m` / `+15m` or typing a time) enables custom rehearsal mode with a one-click **Auto** reset button.
+
+---
+
 ## [2.3.1] — 2026-11-22
 
 ### Fixed

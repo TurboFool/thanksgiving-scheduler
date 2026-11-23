@@ -6,7 +6,12 @@ import { soundManager } from '../audio';
 interface SettingsModalProps {
   settings: AppSettings;
   simulatedNowMin: number;
-  onSave: (nextSettings: AppSettings, nextSimulatedNowMin?: number) => void;
+  simTimeOverridden?: boolean;
+  onSave: (
+    nextSettings: AppSettings,
+    nextSimulatedNowMin?: number,
+    nextSimTimeOverridden?: boolean
+  ) => void;
   onClose: () => void;
 }
 
@@ -26,6 +31,7 @@ function timeInputToMin(val: string, fallback: number): number {
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   simulatedNowMin,
+  simTimeOverridden = false,
   onSave,
   onClose,
 }) => {
@@ -36,6 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [warningAt5Min, setWarningAt5Min] = useState(settings.warningAt5Min);
   const [useSimulatedClock, setUseSimulatedClock] = useState(settings.useSimulatedClock);
   const [simMin, setSimMin] = useState(simulatedNowMin);
+  const [simOverridden, setSimOverridden] = useState(simTimeOverridden);
   const [voiceTestStatus, setVoiceTestStatus] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -51,7 +58,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         useSimulatedClock,
         simulatedNowMin: simMin,
       },
-      simMin
+      simMin,
+      simOverridden
     );
     onClose();
   };
@@ -174,32 +182,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            {/* Clock & Rehearsal */}
+            {/* Planning vs Execution Mode */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div className="section-label">
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <Clock size={12} /> Clock &amp; Rehearsal Mode
+                  <Clock size={12} /> Planning vs. Execution Mode
                 </span>
               </div>
 
-              <label className="dep-check-item">
-                <input
-                  type="checkbox"
-                  checked={useSimulatedClock}
-                  onChange={(e) => setUseSimulatedClock(e.target.checked)}
-                />
-                <span>Use Simulated Clock (for testing &amp; rehearsing schedules)</span>
-              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className={`btn ${useSimulatedClock ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                  onClick={() => setUseSimulatedClock(true)}
+                >
+                  Planning Mode (Ahead of Time)
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${!useSimulatedClock ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                  onClick={() => setUseSimulatedClock(false)}
+                >
+                  Execution Mode (Day-Of Live)
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--ink-muted)' }}>
+                {useSimulatedClock
+                  ? 'Planning Mode is independent of your real-world clock and defaults to the suggested start time for your chosen dishes.'
+                  : 'Execution Mode uses your live real-world clock for day-of timers, alarms, and real-time cascading.'}
+              </p>
 
               {useSimulatedClock && (
-                <div className="form-field" style={{ maxWidth: 200 }}>
-                  <label htmlFor="settings-sim-time">Simulated Current Time</label>
-                  <input
-                    id="settings-sim-time"
-                    type="time"
-                    value={minToTimeInput(simMin)}
-                    onChange={(e) => setSimMin(timeInputToMin(e.target.value, simMin))}
-                  />
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                  <div className="form-field" style={{ maxWidth: 200 }}>
+                    <label htmlFor="settings-sim-time">
+                      Simulated Start Time {simOverridden ? '(Custom)' : '(Auto — Suggested Start)'}
+                    </label>
+                    <input
+                      id="settings-sim-time"
+                      type="time"
+                      value={minToTimeInput(simMin)}
+                      onChange={(e) => {
+                        setSimMin(timeInputToMin(e.target.value, simMin));
+                        setSimOverridden(true);
+                      }}
+                    />
+                  </div>
+                  {simOverridden && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.76rem', padding: '6px 10px' }}
+                      onClick={() => setSimOverridden(false)}
+                    >
+                      Reset to Suggested Start
+                    </button>
+                  )}
                 </div>
               )}
             </div>

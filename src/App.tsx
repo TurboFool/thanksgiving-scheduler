@@ -150,7 +150,8 @@ export function App() {
   const steps = useMemo(() => flattenEventSteps(activeEvent), [activeEvent]);
 
   const targetDinnerMin = activeEvent.targetDinnerMin;
-  const nowMin = settings.useSimulatedClock ? activeEvent.simulatedNowMin : realNowMin;
+  const isAutoSim = settings.useSimulatedClock && !activeEvent.simTimeOverridden;
+  const rawNowMin = settings.useSimulatedClock ? activeEvent.simulatedNowMin : realNowMin;
 
   // Persist workspace & settings to localStorage
   useEffect(() => {
@@ -310,9 +311,10 @@ export function App() {
 
   // Compute deterministic schedule
   const schedule = useMemo(
-    () => computeSchedule(steps, appliances, targetDinnerMin, nowMin),
-    [steps, appliances, targetDinnerMin, nowMin]
+    () => computeSchedule(steps, appliances, targetDinnerMin, isAutoSim ? undefined : rawNowMin),
+    [steps, appliances, targetDinnerMin, isAutoSim, rawNowMin]
   );
+  const nowMin = isAutoSim ? schedule.suggestedStartMin : rawNowMin;
 
   const applianceMap = useMemo(() => new Map(appliances.map((a) => [a.id, a])), [appliances]);
 
@@ -1026,27 +1028,70 @@ export function App() {
         {/* Clock & Actions */}
         <div className="toolbar-actions">
           <div className="clock-sim-bar">
-            <button
-              type="button"
-              className={`btn ${settings.useSimulatedClock ? 'btn-secondary' : 'btn-primary'}`}
-              style={{ padding: '5px 9px', fontSize: '0.76rem' }}
-              onClick={() =>
-                setSettings((s) => ({ ...s, useSimulatedClock: !s.useSimulatedClock }))
-              }
-              title="Toggle between live computer clock and simulated test clock"
+            <div
+              role="group"
+              aria-label="Schedule mode"
+              style={{
+                display: 'inline-flex',
+                borderRadius: 8,
+                border: '1px solid var(--border-strong)',
+                overflow: 'hidden',
+                background: 'var(--bg-canvas)',
+              }}
             >
-              <Clock size={13} />
-              {settings.useSimulatedClock ? 'Sim' : `Live: ${formatTimeMin(nowMin)}`}
-            </button>
+              <button
+                type="button"
+                className={`btn ${settings.useSimulatedClock ? 'btn-primary' : 'btn-ghost'}`}
+                style={{
+                  padding: '4px 9px',
+                  fontSize: '0.74rem',
+                  borderRadius: 0,
+                  border: 'none',
+                }}
+                onClick={() => setSettings((s) => ({ ...s, useSimulatedClock: true }))}
+                title="Planning Mode: plan ahead without being limited by the current time of day"
+              >
+                Planning
+              </button>
+              <button
+                type="button"
+                className={`btn ${!settings.useSimulatedClock ? 'btn-primary' : 'btn-ghost'}`}
+                style={{
+                  padding: '4px 9px',
+                  fontSize: '0.74rem',
+                  borderRadius: 0,
+                  border: 'none',
+                }}
+                onClick={() => setSettings((s) => ({ ...s, useSimulatedClock: false }))}
+                title="Execution Mode (Day-Of): track live real-world time, timers, and alarms"
+              >
+                <Clock size={12} />
+                {!settings.useSimulatedClock ? `Execution · ${formatTimeMin(nowMin)}` : 'Execution'}
+              </button>
+            </div>
             {settings.useSimulatedClock && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <span
+                  style={{ fontSize: '0.7rem', color: 'var(--ink-muted)', fontWeight: 600 }}
+                  title={
+                    isAutoSim
+                      ? 'Automatically matches suggested start time for your chosen dishes'
+                      : 'Custom simulated start time'
+                  }
+                >
+                  Sim:
+                </span>
                 <input
                   type="time"
                   aria-label="Simulated current time"
-                  value={minToTimeInput(activeEvent.simulatedNowMin)}
+                  value={minToTimeInput(nowMin)}
                   onChange={(e) => {
                     const nextMin = timeInputToMin(e.target.value);
-                    updateActiveEvent((ev) => ({ ...ev, simulatedNowMin: nextMin }));
+                    updateActiveEvent((ev) => ({
+                      ...ev,
+                      simulatedNowMin: nextMin,
+                      simTimeOverridden: true,
+                    }));
                   }}
                   style={{
                     fontFamily: 'var(--font-mono)',
@@ -1064,7 +1109,11 @@ export function App() {
                   className="btn btn-secondary"
                   style={{ padding: '4px 7px', fontSize: '0.72rem' }}
                   onClick={() =>
-                    updateActiveEvent((ev) => ({ ...ev, simulatedNowMin: ev.simulatedNowMin - 15 }))
+                    updateActiveEvent((ev) => ({
+                      ...ev,
+                      simulatedNowMin: nowMin - 15,
+                      simTimeOverridden: true,
+                    }))
                   }
                 >
                   -15m
@@ -1074,11 +1123,32 @@ export function App() {
                   className="btn btn-secondary"
                   style={{ padding: '4px 7px', fontSize: '0.72rem' }}
                   onClick={() =>
-                    updateActiveEvent((ev) => ({ ...ev, simulatedNowMin: ev.simulatedNowMin + 15 }))
+                    updateActiveEvent((ev) => ({
+                      ...ev,
+                      simulatedNowMin: nowMin + 15,
+                      simTimeOverridden: true,
+                    }))
                   }
                 >
                   +15m
                 </button>
+                {activeEvent.simTimeOverridden && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ padding: '4px 6px', fontSize: '0.7rem' }}
+                    title={`Reset Sim time to suggested start (${formatTimeMin(schedule.suggestedStartMin)})`}
+                    onClick={() =>
+                      updateActiveEvent((ev) => ({
+                        ...ev,
+                        simTimeOverridden: false,
+                        simulatedNowMin: schedule.suggestedStartMin,
+                      }))
+                    }
+                  >
+                    Auto
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2044,12 +2114,15 @@ export function App() {
       {showSettingsModal && (
         <SettingsModal
           settings={settings}
-          simulatedNowMin={activeEvent.simulatedNowMin}
-          onSave={(nextSettings, nextSimMin) => {
+          simulatedNowMin={nowMin}
+          simTimeOverridden={Boolean(activeEvent.simTimeOverridden)}
+          onSave={(nextSettings, nextSimMin, nextSimOverridden) => {
             setSettings(nextSettings);
-            if (typeof nextSimMin === 'number') {
-              updateActiveEvent((ev) => ({ ...ev, simulatedNowMin: nextSimMin }));
-            }
+            updateActiveEvent((ev) => ({
+              ...ev,
+              ...(typeof nextSimMin === 'number' ? { simulatedNowMin: nextSimMin } : {}),
+              ...(nextSimOverridden !== undefined ? { simTimeOverridden: nextSimOverridden } : {}),
+            }));
             showToast('Saved settings');
           }}
           onClose={() => setShowSettingsModal(false)}

@@ -118,7 +118,7 @@ export function computeSchedule(
   rawSteps: MealStep[],
   appliances: Appliance[],
   targetDinnerMin: number,
-  nowMin: number
+  rawNowMin?: number
 ): ScheduleResult {
   const applianceMap = new Map<string, Appliance>();
   for (const app of appliances) {
@@ -205,6 +205,7 @@ export function computeSchedule(
       targetDinnerMin,
       dinnerDeltaMin: 0,
       earliestStartMin: targetDinnerMin,
+      suggestedStartMin: targetDinnerMin,
       cycleError: 'Circular dependency detected! Check "Depends On" and "Ready Before" links.',
     };
   }
@@ -304,6 +305,13 @@ export function computeSchedule(
     });
     idealIntervalsByApp.set(bestApp.id, targetIntervals);
   }
+
+  let suggestedStartMin = Infinity;
+  for (const st of idealStart.values()) {
+    if (st < suggestedStartMin) suggestedStartMin = st;
+  }
+  if (suggestedStartMin === Infinity) suggestedStartMin = targetDinnerMin - 60;
+  const nowMin = rawNowMin !== undefined ? rawNowMin : suggestedStartMin;
 
   // 4. Forward Live-Cascade Pass
   const liveIntervalsByApp = new Map<string, Interval[]>();
@@ -517,6 +525,7 @@ export function computeSchedule(
     targetDinnerMin,
     dinnerDeltaMin: projectedDinnerMin - targetDinnerMin,
     earliestStartMin,
+    suggestedStartMin,
     cycleError: null,
   };
 }
