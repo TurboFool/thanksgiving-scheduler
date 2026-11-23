@@ -68,7 +68,7 @@ All scheduling and cascading math runs **100% locally and deterministically** in
   - Synthesizes a 2-tone 5-minute warning chime and a repeating 3-note alarm triad via Web Audio API (`SoundManager`), plus optional `window.speechSynthesis` spoken alerts.
 - **Gemini Integration (`src/gemini.ts`, `src/components/GeminiModal.tsx`)**:
   - **No-API-Key Workflow**: Copies a schema-aware prompt for Gemini chat and parses pasted JSON (stripping Markdown fences if present).
-  - **Optional API Workflow**: Calls `gemini-3.8-flash` with `responseMimeType: "application/json"` to convert a menu description into steps, or requests concise slip-recovery advice when behind schedule.
+  - **Optional API Workflow**: Calls `gemini-4-hydrogen` (with automatic fallback to `gemini-3.8-flash` and `gemini-3.5-flash-lite` on `503`/`429`/`404`) with `responseMimeType: "application/json"` to convert a menu description into steps, or requests concise slip-recovery advice when behind schedule.
 
 ---
 

@@ -88,7 +88,48 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
   });
 }
 
-export const GEMINI_MODEL = 'gemini-3.8-flash';
+export const GEMINI_MODELS = [
+  'gemini-4-hydrogen',
+  'gemini-3.8-flash',
+  'gemini-3.5-flash-lite',
+] as const;
+
+async function callGeminiWithFallback(
+  apiKey: string,
+  body: Record<string, unknown>
+): Promise<string> {
+  const key = encodeURIComponent(apiKey.trim());
+  let lastError = 'Gemini API request failed.';
+
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        throw new Error('Gemini returned an empty response.');
+      }
+      return text;
+    }
+
+    const errText = await res.text();
+    lastError = `Gemini API error (${res.status} on ${model}): ${errText.slice(0, 200)}`;
+
+    // Retry with next model on transient overload (503), rate limit (429), or unavailable model (404)
+    if (res.status === 503 || res.status === 429 || res.status === 404) {
+      continue;
+    }
+    throw new Error(lastError);
+  }
+
+  throw new Error(lastError);
+}
 
 export async function generateScheduleWithGemini(
   apiKey: string,
@@ -96,32 +137,13 @@ export async function generateScheduleWithGemini(
   appliances: Appliance[]
 ): Promise<MealStep[]> {
   const prompt = buildGeminiChatPrompt(appliances, menuText);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
-    apiKey.trim()
-  )}`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
-    }),
+  const text = await callGeminiWithFallback(apiKey, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.2,
+    },
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error (${res.status}): ${errText.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('Gemini returned an empty response.');
-  }
   return parseImportedSteps(text, appliances);
 }
 
@@ -163,24 +185,8 @@ ${stepLines}
 
 Give 3 concise, practical, culinary-sound suggestions to recover time or reduce oven/appliance bottlenecks right now (e.g., moving a side to the air fryer/microwave, par-cooking on stovetop, adjusting resting time, or combining compatible temperatures). Keep it under 180 words with bullet points.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
-    apiKey.trim()
-  )}`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.4 },
-    }),
+  return callGeminiWithFallback(apiKey, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.4 },
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error (${res.status}): ${errText.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No suggestions returned.';
 }
