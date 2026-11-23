@@ -88,13 +88,15 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
   });
 }
 
+export const GEMINI_MODEL = 'gemini-3.8-flash';
+
 export async function generateScheduleWithGemini(
   apiKey: string,
   menuText: string,
   appliances: Appliance[]
 ): Promise<MealStep[]> {
   const prompt = buildGeminiChatPrompt(appliances, menuText);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
     apiKey.trim()
   )}`;
 
@@ -161,7 +163,7 @@ ${stepLines}
 
 Give 3 concise, practical, culinary-sound suggestions to recover time or reduce oven/appliance bottlenecks right now (e.g., moving a side to the air fryer/microwave, par-cooking on stovetop, adjusting resting time, or combining compatible temperatures). Keep it under 180 words with bullet points.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
     apiKey.trim()
   )}`;
 
