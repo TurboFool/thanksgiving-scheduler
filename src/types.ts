@@ -33,6 +33,8 @@ export interface MealStep {
   readyBeforeIds: string[];
   /** Whether this step must finish by target dinner time (default true) */
   mustFinishByDinner: boolean;
+  /** Optional finish timing / window inherited from parent MealItem */
+  finishConstraint?: FinishConstraint;
   /** Optional notes / instructions */
   notes?: string;
 
@@ -46,6 +48,78 @@ export interface MealStep {
   actualStartMin?: number;
   /** Actual end time in minutes-from-midnight (when done) */
   actualEndMin?: number;
+}
+
+export type DishCourse =
+  | 'Main'
+  | 'Side'
+  | 'Appetizer'
+  | 'Sauce / Gravy'
+  | 'Bread'
+  | 'Dessert'
+  | 'Beverage'
+  | 'Prep / Other';
+
+export type FinishWindowMode =
+  | 'at_target'
+  | 'before_target'
+  | 'window'
+  | 'after_target';
+
+export interface FinishConstraint {
+  mode: FinishWindowMode;
+  /** Minutes before targetDinnerMin (used for 'before_target') */
+  offsetMin?: number;
+  /** Earliest minutes before targetDinnerMin (used for 'window', e.g. 240 = 4h early) */
+  windowMaxBeforeMin?: number;
+  /** Latest minutes before targetDinnerMin (used for 'window', e.g. 30 = 30m early) */
+  windowMinBeforeMin?: number;
+}
+
+export interface ManualChangeEntry {
+  id: string;
+  timestamp: number;
+  field: string;
+  summary: string;
+}
+
+export interface MealItem {
+  id: string;
+  name: string;
+  course: DishCourse;
+  servings?: string;
+  dietaryTags?: string[];
+  rawNotes: string;
+  sourceUrl?: string;
+  convertedNotes: string;
+  prepAheadNotes?: string;
+  finishConstraint: FinishConstraint;
+  steps: MealStep[];
+  aiProcessedAt?: number;
+  manualChangeLog: ManualChangeEntry[];
+  libraryItemId?: string;
+  updatedAt: number;
+}
+
+export interface MealEvent {
+  id: string;
+  name: string;
+  date?: string;
+  targetDinnerMin: number;
+  simulatedNowMin: number;
+  mealItems: MealItem[];
+  appliancesOverride?: Appliance[] | null;
+  updatedAt: number;
+}
+
+export interface ThymeLineWorkspace {
+  schemaVersion: number;
+  syncVersion: number;
+  updatedAt: number;
+  activeEventId: string;
+  events: MealEvent[];
+  mealLibrary: MealItem[];
+  defaultAppliances: Appliance[];
 }
 
 export interface ScheduledStep extends MealStep {
@@ -91,12 +165,14 @@ export interface AppSettings {
   useSimulatedClock: boolean;
   simulatedNowMin: number;
   geminiApiKey: string;
+  syncPasscode: string;
 }
 
 export interface ScheduleSnapshot {
   label: string;
   timestamp: number;
   steps: MealStep[];
+  mealItems: MealItem[];
   appliances: Appliance[];
   targetDinnerMin: number;
 }

@@ -88,6 +88,32 @@ function findValidPlacement(
   return { valid: true, row };
 }
 
+function getStepTargetEnd(step: MealStep, targetDinnerMin: number): { latestEnd: number; countsForDinner: boolean } {
+  const fc = step.finishConstraint;
+  if (fc) {
+    switch (fc.mode) {
+      case 'at_target':
+        return { latestEnd: targetDinnerMin, countsForDinner: true };
+      case 'before_target':
+        return {
+          latestEnd: targetDinnerMin - Math.max(0, fc.offsetMin ?? 0),
+          countsForDinner: true,
+        };
+      case 'window':
+        return {
+          latestEnd: targetDinnerMin - Math.max(0, fc.windowMinBeforeMin ?? 30),
+          countsForDinner: true,
+        };
+      case 'after_target':
+        return { latestEnd: targetDinnerMin + 120, countsForDinner: false };
+    }
+  }
+  return {
+    latestEnd: step.mustFinishByDinner ? targetDinnerMin : targetDinnerMin + 120,
+    countsForDinner: step.mustFinishByDinner,
+  };
+}
+
 export function computeSchedule(
   rawSteps: MealStep[],
   appliances: Appliance[],
@@ -180,7 +206,7 @@ export function computeSchedule(
     };
   }
 
-  // 3. Backward Resource-Constrained Pass (Ideal Plan anchored to targetDinnerMin)
+  // 3. Backward Resource-Constrained Pass (Ideal Plan anchored to targetDinnerMin & finishConstraint)
   const idealIntervalsByApp = new Map<string, Interval[]>();
   for (const app of appliances) idealIntervalsByApp.set(app.id, []);
 
@@ -193,8 +219,8 @@ export function computeSchedule(
     const app = applianceMap.get(step.applianceId) ?? fallbackAppliance;
     const duration = Math.max(1, step.durationMin);
 
-    // Latest end is min(targetDinnerMin if mustFinishByDinner, min(idealStart of dependents))
-    let latestEnd = step.mustFinishByDinner ? targetDinnerMin : targetDinnerMin + 120;
+    // Latest end is min(finishConstraint/targetDinnerMin, min(idealStart of dependents))
+    let { latestEnd } = getStepTargetEnd(step, targetDinnerMin);
     for (const depId of dependents.get(id) ?? []) {
       const depStart = idealStart.get(depId);
       if (depStart !== undefined && depStart < latestEnd) {
@@ -365,7 +391,8 @@ export function computeSchedule(
     const st = liveStart.get(s.id)!;
     const en = liveEnd.get(s.id)!;
     if (st < earliestStartMin) earliestStartMin = st;
-    if (s.mustFinishByDinner) {
+    const { countsForDinner } = getStepTargetEnd(s, targetDinnerMin);
+    if (countsForDinner) {
       if (!hasDinnerStep || en > projectedDinnerMin) {
         projectedDinnerMin = en;
         hasDinnerStep = true;
@@ -379,8 +406,11 @@ export function computeSchedule(
     const startMin = liveStart.get(s.id)!;
     const endMin = liveEnd.get(s.id)!;
     const iStart = idealStart.get(s.id)!;
+    const { latestEnd, countsForDinner } = getStepTargetEnd(s, targetDinnerMin);
 
-    let minDependentStart = s.mustFinishByDinner ? Math.max(targetDinnerMin, projectedDinnerMin) : Infinity;
+    let minDependentStart = countsForDinner
+      ? Math.max(latestEnd, projectedDinnerMin - (targetDinnerMin - latestEnd))
+      : Infinity;
     for (const depId of dependents.get(s.id) ?? []) {
       const ds = liveStart.get(depId)!;
       if (ds < minDependentStart) minDependentStart = ds;

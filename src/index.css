@@ -1,25 +1,32 @@
 :root {
   --bg-canvas: #faf7f2;
   --bg-surface: #ffffff;
-  --bg-subtle: #f3ede4;
-  --bg-hover: #ebe3d7;
-  --border-light: #e6ddd0;
-  --border-strong: #d4c7b4;
+  --bg-subtle: #f2efe9;
+  --bg-hover: #e7e2d9;
+  --border-light: #e2ddd4;
+  --border-strong: #cfc8bc;
 
-  --ink-primary: #1f1a17;
-  --ink-secondary: #5c5148;
-  --ink-muted: #8a7e73;
+  --ink-primary: #1f2421;
+  --ink-secondary: #525954;
+  --ink-muted: #7d857f;
 
-  --accent-terracotta: #c2592b;
-  --accent-terracotta-hover: #a8481f;
-  --accent-terracotta-soft: #fdf0ea;
+  --accent-sage: #2f6b4f;
+  --accent-sage-hover: #24543e;
+  --accent-sage-soft: #eaf3ee;
+  --accent-brass: #b8862d;
+  --accent-brass-soft: #fbf5e6;
 
-  --status-sage: #2f7a53;
-  --status-sage-soft: #eaf5ef;
-  --status-amber: #c27803;
-  --status-amber-soft: #fef7e6;
-  --status-crimson: #c82829;
-  --status-crimson-soft: #fdecec;
+  /* Backward-compatible accent aliases mapped to Herb Sage */
+  --accent-terracotta: var(--accent-sage);
+  --accent-terracotta-hover: var(--accent-sage-hover);
+  --accent-terracotta-soft: var(--accent-sage-soft);
+
+  --status-sage: #2f6b4f;
+  --status-sage-soft: #eaf3ee;
+  --status-amber: #b8862d;
+  --status-amber-soft: #fbf5e6;
+  --status-crimson: #c23636;
+  --status-crimson-soft: #fdeeee;
 
   --font-display: 'Fraunces', Georgia, serif;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;

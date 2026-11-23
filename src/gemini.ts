@@ -1,4 +1,4 @@
-import type { Appliance, MealStep, ScheduledStep } from './types';
+import type { Appliance, MealItem, MealStep, ScheduledStep } from './types';
 import { formatTimeMin } from './scheduler';
 
 export function buildGeminiChatPrompt(
@@ -225,7 +225,7 @@ export async function getRecoveryAdviceWithGemini(
     .map((a) => `- ${a.name} (capacity: ${a.capacity} ${a.slotLabel}s)`)
     .join('\n');
 
-  const prompt = `We are preparing Thanksgiving dinner. Target dinner time is ${formatTimeMin(
+  const prompt = `We are preparing a family/holiday meal. Target serve time is ${formatTimeMin(
     targetDinnerMin
   )}, but our current projected finish time is ${formatTimeMin(projectedDinnerMin)} (${
     delta > 0 ? `+${delta} minutes behind schedule` : 'on time'
@@ -242,5 +242,168 @@ Give 3 concise, practical, culinary-sound suggestions to recover time or reduce 
   return callGeminiWithFallback(apiKey, {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.4 },
+  });
+}
+
+export interface ProcessedMealItemResult {
+  convertedNotes: string;
+  prepAheadNotes?: string;
+  steps: MealStep[];
+}
+
+export async function processMealItemWithGemini(
+  apiKey: string,
+  item: MealItem,
+  appliances: Appliance[],
+  otherItems: MealItem[] = []
+): Promise<ProcessedMealItemResult> {
+  const appSummary = appliances
+    .map(
+      (a) =>
+        `- id: "${a.id}", name: "${a.name}", capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
+          a.hasTemperature ? `, tolerance: ±${a.tempTolerance}°F` : ''
+        }`
+    )
+    .join('\n');
+
+  const otherStepsSummary = otherItems
+    .flatMap((other) =>
+      other.steps.map((s) => `- id: "${s.id}", dish: "${other.name}", title: "${s.title}"`)
+    )
+    .slice(0, 30)
+    .join('\n');
+
+  const manualLogText =
+    item.manualChangeLog.length > 0
+      ? `\nManual edits logged since last AI processing (MUST be respected/preserved):\n${item.manualChangeLog
+          .map((m) => `- [${m.field}] ${m.summary}`)
+          .join('\n')}\n`
+      : '';
+
+  const currentStepsText =
+    item.steps.length > 0
+      ? `\nCurrent steps on this item:\n${JSON.stringify(
+          item.steps.map((s) => ({
+            id: s.id,
+            title: s.title,
+            durationMin: s.durationMin,
+            applianceId: s.applianceId,
+            slotsRequired: s.slotsRequired,
+            temperature: s.temperature ?? null,
+            dependencies: s.dependencies,
+            readyBeforeIds: s.readyBeforeIds,
+            mustFinishByDinner: s.mustFinishByDinner,
+            notes: s.notes ?? '',
+          })),
+          null,
+          2
+        )}\n`
+      : '';
+
+  const prompt = `You are a culinary scheduling assistant for ThymeLine.
+Analyze this single dish/meal item and produce:
+1. "convertedNotes": A clean, concise, sanitized kitchen summary of how to prepare and cook this item (stripping fluff, keeping exact temps, times, and key ingredients/cues).
+2. "prepAheadNotes": Optional short note on what can be prepped a day ahead or earlier in the day.
+3. "steps": A JSON array of concrete cooking/prep steps for this dish.
+
+Dish Name: ${item.name}
+Course: ${item.course}
+${item.servings ? `Servings: ${item.servings}\n` : ''}${
+    item.sourceUrl ? `Source URL: ${item.sourceUrl}\n` : ''
+  }
+Primary Raw Notes / Recipe:
+${item.rawNotes || '(No raw notes provided yet — infer standard steps from the dish name)'}
+${item.convertedNotes ? `\nPrevious Converted Notes:\n${item.convertedNotes}\n` : ''}${currentStepsText}${manualLogText}
+Available appliances:
+${appSummary}
+${otherStepsSummary ? `\nOther steps in this event (you may reference their IDs in dependencies/readyBeforeIds if needed):\n${otherStepsSummary}\n` : ''}
+Return ONLY a valid JSON object with this exact shape:
+{
+  "convertedNotes": "Concise sanitized kitchen instructions...",
+  "prepAheadNotes": "Optional make-ahead tip...",
+  "steps": [
+    {
+      "id": "unique-kebab-id",
+      "title": "Short action title",
+      "dish": "${item.name}",
+      "durationMin": 30,
+      "applianceId": "oven",
+      "slotsRequired": 1,
+      "temperature": 350,
+      "dependencies": [],
+      "readyBeforeIds": [],
+      "mustFinishByDinner": true,
+      "notes": "Key cue"
+    }
+  ]
+}`;
+
+  const rawText = await callGeminiWithFallback(apiKey, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.2,
+    },
+  });
+
+  let cleaned = rawText.trim();
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch) cleaned = fenceMatch[1].trim();
+  const parsed = JSON.parse(cleaned) as {
+    convertedNotes?: string;
+    prepAheadNotes?: string;
+    steps?: unknown[];
+  };
+
+  const steps = parseImportedSteps(JSON.stringify(parsed.steps ?? []), appliances).map((s) => ({
+    ...s,
+    dish: item.name,
+  }));
+
+  return {
+    convertedNotes: String(parsed.convertedNotes ?? item.convertedNotes ?? '').trim(),
+    prepAheadNotes: parsed.prepAheadNotes ? String(parsed.prepAheadNotes).trim() : item.prepAheadNotes,
+    steps,
+  };
+}
+
+export async function reEvaluateEventWithGemini(
+  apiKey: string,
+  items: MealItem[],
+  appliances: Appliance[],
+  targetDinnerMin: number
+): Promise<string> {
+  const appSummary = appliances
+    .map((a) => `- ${a.name} (${a.capacity} ${a.slotLabel}s${a.hasTemperature ? `, ±${a.tempTolerance}°F` : ''})`)
+    .join('\n');
+
+  const itemSummary = items
+    .map((it) => {
+      const changes =
+        it.manualChangeLog.length > 0
+          ? ` [MANUAL EDITS: ${it.manualChangeLog.map((c) => c.summary).join('; ')}]`
+          : '';
+      const stepsStr = it.steps
+        .map(
+          (s) =>
+            `  * ${s.title}: ${s.durationMin}m on ${s.applianceId}${s.temperature ? ` @ ${s.temperature}°F` : ''}`
+        )
+        .join('\n');
+      return `- ${it.name} (${it.course}, finish: ${it.finishConstraint.mode})${changes}\n${stepsStr}`;
+    })
+    .join('\n');
+
+  const prompt = `We are planning a family/holiday meal targeting ${formatTimeMin(targetDinnerMin)}.
+Appliances:
+${appSummary}
+
+Meal Items & Steps:
+${itemSummary}
+
+Review the full set of dishes and any recent manual edits. Give 3–4 concise, actionable recommendations to optimize appliance sharing, temperature compatibility, or finish windows (e.g., which items can be moved to a flexible finish window or different appliance). Keep under 200 words.`;
+
+  return callGeminiWithFallback(apiKey, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.35 },
   });
 }
