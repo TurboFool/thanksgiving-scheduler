@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, GripVertical } from 'lucide-react';
 import type { Appliance } from '../types';
 
 interface ApplianceModalProps {
@@ -12,6 +12,8 @@ const COLORS = ['#C2592B', '#B45309', '#0F766E', '#6D28D9', '#2F7A53', '#1D4ED8'
 
 export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSave, onClose }) => {
   const [list, setList] = useState<Appliance[]>(appliances.map((a) => ({ ...a })));
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
 
   const updateItem = (idx: number, patch: Partial<Appliance>) => {
     setList((prev) => prev.map((item, i) => (i === idx ? { ...item, ...patch } : item)));
@@ -38,6 +40,22 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
     setList((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleDrop = (targetIdx: number) => {
+    if (dragIdx === null || dragIdx === targetIdx) {
+      setDragIdx(null);
+      setOverIdx(null);
+      return;
+    }
+    setList((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(dragIdx, 1);
+      next.splice(targetIdx, 0, moved);
+      return next;
+    });
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(list);
@@ -55,23 +73,51 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
         <form onSubmit={handleSave}>
           <div className="modal-body">
             <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ink-secondary)' }}>
-              Configure available space (racks, burners, baskets) and temperature tolerance for sharing
-              an appliance simultaneously.
+              Drag the handle to reorder timeline lanes, and configure capacity (racks, burners,
+              baskets) and temperature tolerance.
             </p>
             {list.map((app, idx) => (
               <div
                 key={app.id}
+                draggable
+                onDragStart={() => setDragIdx(idx)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (overIdx !== idx) setOverIdx(idx);
+                }}
+                onDrop={() => handleDrop(idx)}
+                onDragEnd={() => {
+                  setDragIdx(null);
+                  setOverIdx(null);
+                }}
                 style={{
-                  border: '1px solid var(--border-light)',
+                  border:
+                    overIdx === idx && dragIdx !== idx
+                      ? '2px dashed var(--accent-terracotta)'
+                      : '1px solid var(--border-light)',
                   borderRadius: 'var(--radius-md)',
                   padding: 12,
                   background: 'var(--bg-canvas)',
+                  opacity: dragIdx === idx ? 0.55 : 1,
                   display: 'grid',
-                  gridTemplateColumns: '1.5fr 0.8fr 0.9fr auto',
+                  gridTemplateColumns: 'auto 1.5fr 0.8fr 0.9fr auto',
                   gap: 10,
                   alignItems: 'end',
                 }}
               >
+                <div
+                  title="Drag to reorder"
+                  style={{
+                    cursor: 'grab',
+                    color: 'var(--ink-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    alignSelf: 'center',
+                    padding: '4px 2px',
+                  }}
+                >
+                  <GripVertical size={16} />
+                </div>
                 <div className="form-field">
                   <label>Name</label>
                   <input

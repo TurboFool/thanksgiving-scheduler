@@ -95,6 +95,7 @@ export function App() {
   const [undoStack, setUndoStack] = useState<ScheduleSnapshot[]>([]);
   const [editingStep, setEditingStep] = useState<MealStep | null | 'new'>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [selectedDish, setSelectedDish] = useState<string | null>(null);
   const [showApplianceModal, setShowApplianceModal] = useState(false);
   const [showGeminiModal, setShowGeminiModal] = useState(false);
   const [mutedAlarms, setMutedAlarms] = useState<Set<string>>(new Set());
@@ -331,8 +332,48 @@ export function App() {
     pushUndo('Clear all steps');
     setSteps([]);
     setSelectedStepId(null);
+    setSelectedDish(null);
     setMutedAlarms(new Set());
   };
+
+  const handleReorderAppliances = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    pushUndo('Reorder appliances');
+    setAppliances((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      if (!moved) return prev;
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  };
+
+  const dishGroups = useMemo(() => {
+    const map = new Map<string, { count: number; earliestStartMin: number }>();
+    for (const s of schedule.steps) {
+      const name = s.dish || 'General';
+      const cur = map.get(name);
+      if (!cur) {
+        map.set(name, { count: 1, earliestStartMin: s.startMin });
+      } else {
+        cur.count += 1;
+        if (s.startMin < cur.earliestStartMin) cur.earliestStartMin = s.startMin;
+      }
+    }
+    return Array.from(map.entries())
+      .map(([dish, info]) => ({ dish, ...info }))
+      .sort((a, b) => a.earliestStartMin - b.earliestStartMin || a.dish.localeCompare(b.dish));
+  }, [schedule.steps]);
+
+  const activeDishFilter =
+    selectedDish && dishGroups.some((g) => g.dish === selectedDish) ? selectedDish : null;
+
+  const dishSteps = useMemo(() => {
+    if (!activeDishFilter) return [];
+    return schedule.steps
+      .filter((s) => (s.dish || 'General') === activeDishFilter)
+      .sort((a, b) => a.startMin - b.startMin);
+  }, [schedule.steps, activeDishFilter]);
 
   // Partition steps for Kitchen Mode panel
   const activeSteps = useMemo(
@@ -558,6 +599,140 @@ export function App() {
           </div>
 
           <div className="kitchen-scroll">
+            {/* Dish Groups Filter */}
+            {dishGroups.length > 0 && (
+              <div>
+                <div className="section-label">
+                  <span>Dish Groups ({dishGroups.length})</span>
+                  {activeDishFilter && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: '0.7rem', padding: '1px 6px' }}
+                      onClick={() => setSelectedDish(null)}
+                    >
+                      Show All
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 4 }}>
+                  <button
+                    type="button"
+                    className={`btn ${activeDishFilter === null ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '3px 9px', fontSize: '0.73rem' }}
+                    onClick={() => setSelectedDish(null)}
+                  >
+                    All ({schedule.steps.length})
+                  </button>
+                  {dishGroups.map((g) => (
+                    <button
+                      key={g.dish}
+                      type="button"
+                      className={`btn ${activeDishFilter === g.dish ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ padding: '3px 9px', fontSize: '0.73rem' }}
+                      onClick={() =>
+                        setSelectedDish((cur) => (cur === g.dish ? null : g.dish))
+                      }
+                    >
+                      {g.dish} ({g.count})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Focused Dish Group Steps */}
+            {activeDishFilter ? (
+              <div>
+                <div className="section-label">
+                  <span>
+                    {activeDishFilter} Steps ({dishSteps.length})
+                  </span>
+                </div>
+                {dishSteps.map((s) => {
+                  const app = applianceMap.get(s.applianceId);
+                  return (
+                    <div
+                      key={s.id}
+                      className="upnext-item"
+                      onClick={() => {
+                        setSelectedStepId(s.id);
+                        setEditingStep(s);
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        background: s.status === 'done' ? 'var(--status-sage-soft)' : undefined,
+                        opacity: s.status === 'done' ? 0.78 : 1,
+                      }}
+                    >
+                      <div className="upnext-info">
+                        <div
+                          className="upnext-title"
+                          style={{
+                            textDecoration: s.status === 'done' ? 'line-through' : undefined,
+                          }}
+                        >
+                          {s.title}
+                        </div>
+                        <div className="upnext-sub">
+                          <span className="mono" style={{ fontWeight: 600 }}>
+                            {formatTimeMin(s.startMin)}–{formatTimeMin(s.endMin)}
+                          </span>
+                          <span>· {formatDuration(s.durationMin + (s.addedMin || 0))}</span>
+                          <span>· {app?.name}</span>
+                          {s.temperature !== undefined && (
+                            <span className="pill temp">{s.temperature}°F</span>
+                          )}
+                          {s.isDelayed && <span className="pill delayed">+{s.delayMin}m</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {s.status === 'pending' && (
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startStep(s.id);
+                            }}
+                          >
+                            <Play size={11} /> Start
+                          </button>
+                        )}
+                        {(s.status === 'running' || s.status === 'paused') && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              completeStep(s.id);
+                            }}
+                          >
+                            <Check size={11} /> Done
+                          </button>
+                        )}
+                        {s.status === 'done' && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              reopenStep(s.id);
+                            }}
+                          >
+                            Reopen
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <>
             {/* Active Timers */}
             <div>
               <div className="section-label">
@@ -767,6 +942,8 @@ export function App() {
                 ))}
               </div>
             )}
+              </>
+            )}
           </div>
         </aside>
 
@@ -779,11 +956,13 @@ export function App() {
           targetDinnerMin={settings.targetDinnerMin}
           nowMin={nowMin}
           selectedStepId={selectedStepId}
+          highlightedDish={activeDishFilter}
           onSelectStep={(step: ScheduledStep) => {
             setSelectedStepId(step.id);
             setEditingStep(step);
           }}
           onStartStep={startStep}
+          onReorderAppliances={handleReorderAppliances}
         />
       </main>
 

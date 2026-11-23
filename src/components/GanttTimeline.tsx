@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Flame, ZoomIn, ZoomOut, Clock, Play } from 'lucide-react';
+import { Flame, ZoomIn, ZoomOut, Clock, Play, GripVertical } from 'lucide-react';
 import type { Appliance, ScheduledStep } from '../types';
 import { formatDuration, formatTimeMin } from '../scheduler';
 
@@ -11,8 +11,10 @@ interface GanttTimelineProps {
   targetDinnerMin: number;
   nowMin: number;
   selectedStepId: string | null;
+  highlightedDish?: string | null;
   onSelectStep: (step: ScheduledStep) => void;
   onStartStep: (id: string) => void;
+  onReorderAppliances?: (fromIndex: number, toIndex: number) => void;
 }
 
 const ROW_HEIGHT = 58;
@@ -26,10 +28,14 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   targetDinnerMin,
   nowMin,
   selectedStepId,
+  highlightedDish,
   onSelectStep,
   onStartStep,
+  onReorderAppliances,
 }) => {
   const [pxPerMin, setPxPerMin] = useState(4.6);
+  const [dragLaneIdx, setDragLaneIdx] = useState<number | null>(null);
+  const [overLaneIdx, setOverLaneIdx] = useState<number | null>(null);
 
   // Timeline bounds: pad 30m before earliest/now and 30m after projected/target dinner
   const startBound = useMemo(() => {
@@ -139,14 +145,50 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
 
           {/* Body */}
           <div className="gantt-body" style={{ height: laneLayout.totalHeight }}>
-            {appliances.map((app) => {
+            {appliances.map((app, appIdx) => {
               const meta = laneLayout.laneMeta.get(app.id)!;
               const appSteps = steps.filter((s) => s.applianceId === app.id);
+              const isDropTarget = overLaneIdx === appIdx && dragLaneIdx !== null && dragLaneIdx !== appIdx;
 
               return (
-                <div key={app.id} className="gantt-lane" style={{ height: meta.height }}>
-                  <div className="gantt-lane-label">
+                <div
+                  key={app.id}
+                  className="gantt-lane"
+                  style={{
+                    height: meta.height,
+                    boxShadow: isDropTarget ? 'inset 0 2px 0 var(--accent-terracotta)' : undefined,
+                  }}
+                  onDragOver={(e) => {
+                    if (dragLaneIdx === null) return;
+                    e.preventDefault();
+                    if (overLaneIdx !== appIdx) setOverLaneIdx(appIdx);
+                  }}
+                  onDrop={() => {
+                    if (dragLaneIdx !== null && dragLaneIdx !== appIdx && onReorderAppliances) {
+                      onReorderAppliances(dragLaneIdx, appIdx);
+                    }
+                    setDragLaneIdx(null);
+                    setOverLaneIdx(null);
+                  }}
+                >
+                  <div
+                    className="gantt-lane-label"
+                    draggable={Boolean(onReorderAppliances)}
+                    onDragStart={() => setDragLaneIdx(appIdx)}
+                    onDragEnd={() => {
+                      setDragLaneIdx(null);
+                      setOverLaneIdx(null);
+                    }}
+                    title={onReorderAppliances ? 'Drag to reorder appliance lane' : undefined}
+                    style={{
+                      cursor: onReorderAppliances ? 'grab' : undefined,
+                      opacity: dragLaneIdx === appIdx ? 0.55 : 1,
+                    }}
+                  >
                     <div className="lane-name">
+                      {onReorderAppliances && (
+                        <GripVertical size={13} style={{ color: 'var(--ink-muted)', flexShrink: 0 }} />
+                      )}
                       <span className="lane-dot" style={{ background: app.color }} />
                       {app.name}
                     </div>
@@ -171,6 +213,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                       const isRinging = s.status === 'running' && s.remainingSec <= 0;
                       const statusClass = isRinging ? 'ringing' : `status-${s.status}`;
                       const isSelected = selectedStepId === s.id;
+                      const isDimmed = Boolean(highlightedDish && s.dish !== highlightedDish);
 
                       return (
                         <div
@@ -183,6 +226,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                             height: rect.h,
                             borderLeftWidth: 4,
                             borderLeftColor: app.color,
+                            opacity: isDimmed ? 0.32 : undefined,
                           }}
                           onClick={() => onSelectStep(s)}
                           title={`${s.title} (${formatTimeMin(s.startMin)} – ${formatTimeMin(s.endMin)})`}
