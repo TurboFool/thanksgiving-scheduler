@@ -32,9 +32,10 @@ All scheduling and cascading math runs **100% locally and deterministically** in
 
 ---
 
-## 4. Cloud Sync (`functions/api/sync.ts`, `src/sync.ts`)
+## 4. Cloud Sync & Deployment (`functions/api/sync.ts`, `src/sync.ts`)
 
-- Optional Cloudflare Pages Function (`GET`/`PUT /api/sync`) backed by `THYMELINE_BUCKET` (R2) or `THYMELINE_KV` (KV), protected by `SYNC_PASSCODE` with optimistic `syncVersion` conflict detection.
+- **Production Domain**: `https://thymeline.sariandjarrett.com` (hosted on Cloudflare Pages).
+- **Cloudflare Pages Function** (`GET`/`PUT /api/sync`): Backed by R2 bucket `app-thymeline` bound as `THYMELINE_BUCKET` (or optional KV namespace `THYMELINE_KV`), protected by the `SYNC_PASSCODE` secret under **Settings → Variables and Secrets** with optimistic `syncVersion` conflict detection.
 - `localStorage` (`thymeline_workspace_v1`, `thymeline_settings_v1`) caches everything locally for offline kitchen reliability.
 
 ---
