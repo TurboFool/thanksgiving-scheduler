@@ -32,6 +32,7 @@ import {
 import { formatDuration } from '../scheduler';
 import { scaleIngredients, scaleServingsLabel } from '../recipeScaler';
 import { cloneItemForEvent } from '../workspace';
+import { StepModal } from './StepModal';
 
 interface MealItemModalProps {
   item: MealItem | null;
@@ -46,7 +47,6 @@ interface MealItemModalProps {
   onDelete?: (itemId: string) => void;
   onSaveToLibrary: (item: MealItem) => void;
   onQuickImportFromLibrary?: (libItem: MealItem) => void;
-  onEditStep: (step: MealStep, parentItemId: string) => void;
   onClose: () => void;
 }
 
@@ -75,7 +75,6 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   onDelete,
   onSaveToLibrary,
   onQuickImportFromLibrary,
-  onEditStep,
   onClose,
 }) => {
   const isNew = !item;
@@ -118,6 +117,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const [quickFillInput, setQuickFillInput] = useState('');
   const [quickFillLoading, setQuickFillLoading] = useState(false);
   const [aiGuidance, setAiGuidance] = useState('');
+  const [editingDraftStep, setEditingDraftStep] = useState<MealStep | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [scaleReview, setScaleReview] = useState<ScaledRecipeReviewResult | null>(null);
   const [appliedScaleUpdates, setAppliedScaleUpdates] = useState(false);
@@ -423,8 +423,9 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const appMap = new Map(appliances.map((a) => [a.id, a]));
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card" style={{ maxWidth: 720 }}>
+    <>
+      <div className="modal-backdrop" style={{ display: editingDraftStep ? 'none' : undefined }}>
+        <div className="modal-card" style={{ maxWidth: 720 }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h2 className="modal-title">
@@ -1053,16 +1054,14 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          {!isNew && (
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              title="Edit step details & dependencies"
-                              onClick={() => onEditStep(s, item.id)}
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title="Edit step details & dependencies"
+                            onClick={() => setEditingDraftStep(s)}
+                          >
+                            <Edit3 size={14} />
+                          </button>
                           <button
                             type="button"
                             className="btn-icon"
@@ -1148,5 +1147,30 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
         </form>
       </div>
     </div>
+
+      {editingDraftStep !== null && (
+        <StepModal
+          step={editingDraftStep}
+          defaultDish={name.trim() || item?.name}
+          allSteps={steps}
+          appliances={appliances}
+          onSave={(savedStep) => {
+            setSteps((prev) =>
+              prev.some((x) => x.id === savedStep.id)
+                ? prev.map((x) => (x.id === savedStep.id ? savedStep : x))
+                : [...prev, savedStep]
+            );
+            appendManualLog('step:edited', `Updated step "${savedStep.title}"`);
+            setEditingDraftStep(null);
+          }}
+          onDelete={(stepId) => {
+            const target = steps.find((x) => x.id === stepId);
+            handleRemoveStep(stepId, target?.title ?? 'step');
+            setEditingDraftStep(null);
+          }}
+          onClose={() => setEditingDraftStep(null)}
+        />
+      )}
+    </>
   );
 };

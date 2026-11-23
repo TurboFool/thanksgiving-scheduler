@@ -2163,16 +2163,6 @@ export function App() {
           onDelete={handleDeleteMealItem}
           onSaveToLibrary={handleSaveToLibrary}
           onQuickImportFromLibrary={handleImportFromLibrary}
-          onEditStep={(step, parentItemId) => {
-            const retTarget = editingMealItem.target;
-            const retTo = editingMealItem.returnTo;
-            setEditingMealItem(null);
-            setEditingStep({
-              step,
-              parentItemId,
-              returnToItem: { id: parentItemId, target: retTarget, returnTo: retTo },
-            });
-          }}
           onClose={() => {
             const shouldReturnToLibrary = editingMealItem.returnTo === 'library';
             setEditingMealItem(null);

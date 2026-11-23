@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.5.2] — 2026-11-22
+
+### Fixed
+- **Preserved Dish Editor Draft State When Editing Steps**: Clicking **Edit** on a step inside `MealItemModal` (for either a Library or Event dish) now opens `StepModal` inline while keeping `MealItemModal` mounted and hidden. Canceling, saving, or deleting a step no longer discards unsaved edits made to the dish's name, notes, ingredients, or other steps. Also enabled step editing on brand-new unsaved dishes.
+
+---
+
 ## [2.5.1] — 2026-11-22
 
 ### Fixed & Added
