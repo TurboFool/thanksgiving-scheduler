@@ -4,6 +4,7 @@ import type { Appliance, MealStep } from '../types';
 
 interface StepModalProps {
   step: MealStep | null;
+  defaultDish?: string;
   allSteps: MealStep[];
   appliances: Appliance[];
   onSave: (step: MealStep) => void;
@@ -14,6 +15,7 @@ interface StepModalProps {
 
 export const StepModal: React.FC<StepModalProps> = ({
   step,
+  defaultDish,
   allSteps,
   appliances,
   onSave,
@@ -23,7 +25,7 @@ export const StepModal: React.FC<StepModalProps> = ({
 }) => {
   const isNew = !step;
   const [title, setTitle] = useState(step?.title ?? '');
-  const [dish, setDish] = useState(step?.dish ?? '');
+  const [dish, setDish] = useState(step?.dish ?? defaultDish ?? '');
   const [durationMin, setDurationMin] = useState(step?.durationMin ?? 30);
   const [applianceId, setApplianceId] = useState(step?.applianceId ?? appliances[0]?.id ?? 'oven');
   const [slotsRequired, setSlotsRequired] = useState(step?.slotsRequired ?? 1);

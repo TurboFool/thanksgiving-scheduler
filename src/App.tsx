@@ -97,6 +97,7 @@ export function App() {
   const [editingStep, setEditingStep] = useState<{
     step: MealStep | null;
     parentItemId?: string;
+    defaultDish?: string;
     returnToItem?: { id: string; target: 'event' | 'library'; returnTo?: 'library' };
   } | null>(null);
   const [editingMealItem, setEditingMealItem] = useState<{
@@ -1250,16 +1251,56 @@ export function App() {
                         {activeDishGroup.item.course} · {formatFinishLabel(activeDishGroup.item)}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      style={{ padding: '4px 9px', fontSize: '0.74rem' }}
-                      onClick={() =>
-                        setEditingMealItem({ item: activeDishGroup.item, target: 'event' })
-                      }
-                    >
-                      <Edit3 size={12} /> Edit Dish
-                    </button>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.73rem' }}
+                        onClick={() =>
+                          setEditingStep({
+                            step: null,
+                            parentItemId: activeDishGroup.item.id,
+                            defaultDish: activeDishGroup.item.name,
+                          })
+                        }
+                        title="Add a new step to this dish"
+                      >
+                        <Plus size={12} /> Add Step
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ padding: '4px 9px', fontSize: '0.73rem' }}
+                        onClick={() =>
+                          setEditingMealItem({ item: activeDishGroup.item, target: 'event' })
+                        }
+                      >
+                        <Edit3 size={12} /> Edit Dish
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '4px 7px',
+                          fontSize: '0.73rem',
+                          color: 'var(--status-crimson)',
+                        }}
+                        title="Delete entire dish and all its steps from this event"
+                        onClick={() => {
+                          const targetId = activeDishGroup.item.id;
+                          const targetName = activeDishGroup.item.name;
+                          pushUndo(`Delete dish "${targetName}"`);
+                          updateActiveEvent((ev) => ({
+                            ...ev,
+                            mealItems: ev.mealItems.filter((it) => it.id !== targetId),
+                          }));
+                          setSelectedDish(null);
+                          showToast(`Deleted "${targetName}" and its steps`);
+                        }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </div>
                   {(activeDishGroup.item.convertedNotes || activeDishGroup.item.rawNotes) && (
                     <div
@@ -1602,22 +1643,53 @@ export function App() {
       {editingStep !== null && (
         <StepModal
           step={editingStep.step}
-          allSteps={steps}
+          defaultDish={editingStep.defaultDish}
+          allSteps={
+            editingStep.returnToItem?.target === 'library'
+              ? workspace.mealLibrary.find((l) => l.id === editingStep.returnToItem?.id)?.steps ?? []
+              : steps
+          }
           appliances={appliances}
           onSave={(saved) => {
             const ret = editingStep.returnToItem;
-            handleSaveStep(saved);
-            showToast(`Saved step "${saved.title}"`);
-            if (ret) {
-              const sourceList =
-                ret.target === 'library' ? workspace.mealLibrary : activeEvent.mealItems;
-              const parent = sourceList.find((it) => it.id === ret.id);
+            if (ret?.target === 'library') {
+              const parent = workspace.mealLibrary.find((l) => l.id === ret.id);
               if (parent) {
                 const updatedParent: MealItem = {
                   ...parent,
                   steps: parent.steps.some((s) => s.id === saved.id)
                     ? parent.steps.map((s) => (s.id === saved.id ? saved : s))
-                    : [...parent.steps, saved],
+                    : [...parent.steps, { ...saved, dish: parent.name }],
+                  updatedAt: Date.now(),
+                };
+                setWorkspace((prev) => ({
+                  ...prev,
+                  updatedAt: Date.now(),
+                  mealLibrary: prev.mealLibrary.map((l) => (l.id === ret.id ? updatedParent : l)),
+                }));
+                setEditingStep(null);
+                setEditingMealItem({
+                  item: updatedParent,
+                  target: 'library',
+                  returnTo: ret.returnTo,
+                });
+              } else {
+                setEditingStep(null);
+              }
+              showToast(`Saved library step "${saved.title}"`);
+              return;
+            }
+
+            handleSaveStep(saved);
+            showToast(`Saved step "${saved.title}"`);
+            if (ret) {
+              const parent = activeEvent.mealItems.find((it) => it.id === ret.id);
+              if (parent) {
+                const updatedParent: MealItem = {
+                  ...parent,
+                  steps: parent.steps.some((s) => s.id === saved.id)
+                    ? parent.steps.map((s) => (s.id === saved.id ? saved : s))
+                    : [...parent.steps, { ...saved, dish: parent.name }],
                 };
                 setEditingMealItem({
                   item: updatedParent,
@@ -1629,12 +1701,42 @@ export function App() {
           }}
           onDelete={(id) => {
             const ret = editingStep.returnToItem;
+            if (ret?.target === 'library') {
+              const parent = workspace.mealLibrary.find((l) => l.id === ret.id);
+              if (parent) {
+                const updatedParent: MealItem = {
+                  ...parent,
+                  steps: parent.steps
+                    .filter((s) => s.id !== id)
+                    .map((s) => ({
+                      ...s,
+                      dependencies: s.dependencies.filter((d) => d !== id),
+                      readyBeforeIds: s.readyBeforeIds.filter((d) => d !== id),
+                    })),
+                  updatedAt: Date.now(),
+                };
+                setWorkspace((prev) => ({
+                  ...prev,
+                  updatedAt: Date.now(),
+                  mealLibrary: prev.mealLibrary.map((l) => (l.id === ret.id ? updatedParent : l)),
+                }));
+                setEditingStep(null);
+                setEditingMealItem({
+                  item: updatedParent,
+                  target: 'library',
+                  returnTo: ret.returnTo,
+                });
+              } else {
+                setEditingStep(null);
+              }
+              showToast('Deleted library step');
+              return;
+            }
+
             handleDeleteStep(id);
             showToast('Deleted cooking step');
             if (ret) {
-              const sourceList =
-                ret.target === 'library' ? workspace.mealLibrary : activeEvent.mealItems;
-              const parent = sourceList.find((it) => it.id === ret.id);
+              const parent = activeEvent.mealItems.find((it) => it.id === ret.id);
               if (parent) {
                 setEditingMealItem({
                   item: { ...parent, steps: parent.steps.filter((s) => s.id !== id) },
@@ -1645,6 +1747,41 @@ export function App() {
             }
           }}
           onDuplicate={(orig) => {
+            const ret = editingStep.returnToItem;
+            if (ret?.target === 'library') {
+              const parent = workspace.mealLibrary.find((l) => l.id === ret.id);
+              if (parent) {
+                const copy: MealStep = {
+                  ...orig,
+                  id: `step-${Date.now()}`,
+                  title: `${orig.title} (Copy)`,
+                  status: 'pending',
+                  remainingSec: orig.durationMin * 60,
+                  addedMin: 0,
+                  actualStartMin: undefined,
+                  actualEndMin: undefined,
+                };
+                const updatedParent: MealItem = {
+                  ...parent,
+                  steps: [...parent.steps, copy],
+                  updatedAt: Date.now(),
+                };
+                setWorkspace((prev) => ({
+                  ...prev,
+                  updatedAt: Date.now(),
+                  mealLibrary: prev.mealLibrary.map((l) => (l.id === ret.id ? updatedParent : l)),
+                }));
+                setEditingStep(null);
+                setEditingMealItem({
+                  item: updatedParent,
+                  target: 'library',
+                  returnTo: ret.returnTo,
+                });
+              }
+              showToast(`Duplicated "${orig.title}"`);
+              return;
+            }
+
             handleDuplicateStep(orig);
             showToast(`Duplicated "${orig.title}"`);
           }}

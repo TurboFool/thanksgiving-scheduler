@@ -5,6 +5,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.1] — 2026-11-22
+
+### Fixed
+- Fixed a bug where editing a step inside a **Meal Library** dish accidentally added that step to the active event's **Up Next** timeline; library step edits now stay isolated to `workspace.mealLibrary`.
+
+### Added
+- Added **+ Add Step** and **Delete Dish** (`Trash2`) buttons directly on the focused Dish Card in **Dishes** so you can add steps to a meal item or remove an entire dish and all its child steps from the event (undoable).
+
+---
+
 ## [2.1.0] — 2026-11-22
 
 ### Added
