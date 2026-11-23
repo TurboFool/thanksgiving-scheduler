@@ -35,6 +35,16 @@ export interface MealStep {
   mustFinishByDinner: boolean;
   /** Optional finish timing / window inherited from parent MealItem */
   finishConstraint?: FinishConstraint;
+  /** Manual start time override (minutes from midnight) when dragged/pinned on timeline */
+  pinnedStartMin?: number;
+  /** Whether this step can be completed early and held in a preserved state */
+  canPrepEarly?: boolean;
+  /** Minimum minutes before dependent/serve time this step can be prepped early */
+  earlyPrepMinBefore?: number;
+  /** Maximum minutes early this step can safely be prepared */
+  earlyPrepMaxBefore?: number;
+  /** Preservation / holding instructions when completed early */
+  preservationNotes?: string;
   /** Optional notes / instructions */
   notes?: string;
 

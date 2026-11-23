@@ -683,6 +683,19 @@ export function App() {
     }
   };
 
+  const handleMoveStep = (stepId: string, newStartMin: number) => {
+    pushUndo('Move step on timeline');
+    mutateEventSteps(
+      (s) => (s.id === stepId ? { ...s, pinnedStartMin: newStartMin } : s),
+      (item) => {
+        const target = item.steps.find((s) => s.id === stepId);
+        return target
+          ? `Moved "${target.title}" to ${formatTimeMin(newStartMin)}`
+          : null;
+      }
+    );
+  };
+
   const handleScanManualChanges = () => {
     const modifiedItems = activeEvent.mealItems.filter((it) => it.manualChangeLog.length > 0);
     setScanAiAdvice(null);
@@ -1546,6 +1559,7 @@ export function App() {
             setEditingStep({ step });
           }}
           onStartStep={startStep}
+          onMoveStep={handleMoveStep}
           onReorderAppliances={handleReorderAppliances}
         />
       </main>

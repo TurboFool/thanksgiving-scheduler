@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Flame, ZoomIn, ZoomOut, Clock, Play, GripVertical } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Flame, ZoomIn, ZoomOut, Clock, Play, GripVertical, Pin, Snowflake } from 'lucide-react';
 import type { Appliance, ScheduledStep } from '../types';
 import { formatDuration, formatTimeMin } from '../scheduler';
 
@@ -14,6 +14,7 @@ interface GanttTimelineProps {
   highlightedDish?: string | null;
   onSelectStep: (step: ScheduledStep) => void;
   onStartStep: (id: string) => void;
+  onMoveStep?: (stepId: string, newStartMin: number) => void;
   onReorderAppliances?: (fromIndex: number, toIndex: number) => void;
 }
 
@@ -31,11 +32,66 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   highlightedDish,
   onSelectStep,
   onStartStep,
+  onMoveStep,
   onReorderAppliances,
 }) => {
   const [pxPerMin, setPxPerMin] = useState(4.6);
   const [dragLaneIdx, setDragLaneIdx] = useState<number | null>(null);
   const [overLaneIdx, setOverLaneIdx] = useState<number | null>(null);
+  const [dragStep, setDragStep] = useState<{
+    id: string;
+    origStartMin: number;
+    previewStartMin: number;
+  } | null>(null);
+  const dragOriginRef = useRef<{
+    id: string;
+    startX: number;
+    origStartMin: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      const origin = dragOriginRef.current;
+      if (!origin) return;
+      const dx = e.clientX - origin.startX;
+      if (!origin.moved && Math.abs(dx) < 6) return;
+      origin.moved = true;
+      const deltaMin = Math.round(dx / pxPerMin / 5) * 5;
+      const nextStart = Math.max(0, Math.min(23 * 60 + 45, origin.origStartMin + deltaMin));
+      setDragStep({
+        id: origin.id,
+        origStartMin: origin.origStartMin,
+        previewStartMin: nextStart,
+      });
+    };
+
+    const handlePointerUp = () => {
+      const origin = dragOriginRef.current;
+      if (!origin) return;
+      dragOriginRef.current = null;
+      if (origin.moved) {
+        suppressClickRef.current = true;
+        setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 50);
+      }
+      setDragStep((cur) => {
+        if (cur && origin.moved && cur.previewStartMin !== cur.origStartMin && onMoveStep) {
+          onMoveStep(cur.id, cur.previewStartMin);
+        }
+        return null;
+      });
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [pxPerMin, onMoveStep]);
 
   // Timeline bounds: pad 30m before earliest/now and 30m after projected/target dinner
   const startBound = useMemo(() => {
@@ -214,23 +270,66 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                       const statusClass = isRinging ? 'ringing' : `status-${s.status}`;
                       const isSelected = selectedStepId === s.id;
                       const isDimmed = Boolean(highlightedDish && s.dish !== highlightedDish);
+                      const isDraggingThis = dragStep?.id === s.id;
+                      const displayX = isDraggingThis
+                        ? (dragStep.previewStartMin - startBound) * pxPerMin
+                        : rect.x;
+                      const canDrag = s.status === 'pending' && Boolean(onMoveStep);
 
                       return (
                         <div
                           key={s.id}
                           className={`gantt-task ${statusClass} ${isSelected ? 'selected' : ''}`}
                           style={{
-                            left: rect.x,
+                            left: displayX,
                             top: rect.y - meta.top,
                             width: rect.w,
                             height: rect.h,
                             borderLeftWidth: 4,
                             borderLeftColor: app.color,
-                            opacity: isDimmed ? 0.32 : undefined,
+                            opacity: isDimmed ? 0.32 : isDraggingThis ? 0.88 : undefined,
+                            cursor: canDrag ? (isDraggingThis ? 'grabbing' : 'grab') : 'pointer',
+                            zIndex: isDraggingThis ? 25 : undefined,
                           }}
-                          onClick={() => onSelectStep(s)}
-                          title={`${s.title} (${formatTimeMin(s.startMin)} – ${formatTimeMin(s.endMin)})`}
+                          onPointerDown={(e) => {
+                            if (!canDrag || e.button !== 0) return;
+                            if ((e.target as HTMLElement).closest('button')) return;
+                            dragOriginRef.current = {
+                              id: s.id,
+                              startX: e.clientX,
+                              origStartMin: s.startMin,
+                              moved: false,
+                            };
+                          }}
+                          onClick={() => {
+                            if (suppressClickRef.current) return;
+                            onSelectStep(s);
+                          }}
+                          title={`${s.title} (${formatTimeMin(s.startMin)} – ${formatTimeMin(s.endMin)})${
+                            s.canPrepEarly && s.preservationNotes
+                              ? `\nEarly Prep: ${s.preservationNotes}`
+                              : ''
+                          }`}
                         >
+                          {isDraggingThis && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: -20,
+                                left: 0,
+                                background: 'var(--ink-primary)',
+                                color: '#fff',
+                                fontSize: '0.66rem',
+                                fontWeight: 600,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                whiteSpace: 'nowrap',
+                                pointerEvents: 'none',
+                              }}
+                            >
+                              {formatTimeMin(dragStep.previewStartMin)}
+                            </div>
+                          )}
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
                             <span className="task-bar-title">{s.title}</span>
                             {s.status === 'pending' && rect.w > 75 && (
@@ -250,6 +349,23 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                           </div>
                           <div className="task-bar-sub">
                             <span className="mono">{formatDuration(s.endMin - s.startMin)}</span>
+                            {s.pinnedStartMin !== undefined && (
+                              <span title="Manually pinned start time" style={{ color: 'var(--accent-sage)' }}>
+                                <Pin size={10} />
+                              </span>
+                            )}
+                            {s.canPrepEarly && (
+                              <span
+                                title={
+                                  s.preservationNotes
+                                    ? `Early Prep: ${s.preservationNotes}`
+                                    : 'Can be prepped early & held'
+                                }
+                                style={{ color: '#0F766E' }}
+                              >
+                                <Snowflake size={10} />
+                              </span>
+                            )}
                             {s.temperature !== undefined && (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: '#B44619', fontWeight: 600 }}>
                                 <Flame size={10} />

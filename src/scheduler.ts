@@ -221,6 +221,9 @@ export function computeSchedule(
 
     // Latest end is min(finishConstraint/targetDinnerMin, min(idealStart of dependents))
     let { latestEnd } = getStepTargetEnd(step, targetDinnerMin);
+    if (step.pinnedStartMin !== undefined) {
+      latestEnd = step.pinnedStartMin + duration;
+    }
     for (const depId of dependents.get(id) ?? []) {
       const depStart = idealStart.get(depId);
       if (depStart !== undefined && depStart < latestEnd) {
@@ -332,8 +335,11 @@ export function computeSchedule(
 
     const duration = Math.max(1, step.durationMin + (step.addedMin || 0));
 
-    // Earliest feasible start = max(idealStart, nowMin, max(liveEnd of prereqs))
-    let earliest = Math.max(idealStart.get(id)!, nowMin);
+    // Earliest feasible start: if manually pinned, honor pinnedStartMin (unless a prereq finishes later)
+    let earliest =
+      step.pinnedStartMin !== undefined
+        ? step.pinnedStartMin
+        : Math.max(idealStart.get(id)!, nowMin);
     for (const pId of prereqs.get(id) ?? []) {
       const pEnd = liveEnd.get(pId);
       if (pEnd !== undefined && pEnd > earliest) {

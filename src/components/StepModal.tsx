@@ -33,6 +33,15 @@ export const StepModal: React.FC<StepModalProps> = ({
   const [dependencies, setDependencies] = useState<string[]>(step?.dependencies ?? []);
   const [readyBeforeIds, setReadyBeforeIds] = useState<string[]>(step?.readyBeforeIds ?? []);
   const [mustFinishByDinner, setMustFinishByDinner] = useState(step?.mustFinishByDinner ?? true);
+  const [pinnedStartMin, setPinnedStartMin] = useState<number | undefined>(step?.pinnedStartMin);
+  const [canPrepEarly, setCanPrepEarly] = useState(step?.canPrepEarly ?? false);
+  const [earlyPrepMinBefore, setEarlyPrepMinBefore] = useState<number>(
+    step?.earlyPrepMinBefore ?? 30
+  );
+  const [earlyPrepMaxBefore, setEarlyPrepMaxBefore] = useState<number>(
+    step?.earlyPrepMaxBefore ?? 240
+  );
+  const [preservationNotes, setPreservationNotes] = useState(step?.preservationNotes ?? '');
   const [notes, setNotes] = useState(step?.notes ?? '');
 
   const selectedApp = appliances.find((a) => a.id === applianceId);
@@ -40,6 +49,20 @@ export const StepModal: React.FC<StepModalProps> = ({
 
   const toggleId = (list: string[], setList: (v: string[]) => void, id: string) => {
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  };
+
+  const minToTimeInput = (min: number): string => {
+    const norm = ((Math.round(min) % 1440) + 1440) % 1440;
+    const h = Math.floor(norm / 60);
+    const m = norm % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  };
+
+  const timeInputToMin = (val: string): number | undefined => {
+    if (!val) return undefined;
+    const [h, m] = val.split(':').map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return undefined;
+    return h * 60 + m;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -60,6 +83,12 @@ export const StepModal: React.FC<StepModalProps> = ({
       dependencies,
       readyBeforeIds,
       mustFinishByDinner,
+      finishConstraint: step?.finishConstraint,
+      pinnedStartMin,
+      canPrepEarly,
+      earlyPrepMinBefore: canPrepEarly ? Math.max(0, Number(earlyPrepMinBefore) || 0) : undefined,
+      earlyPrepMaxBefore: canPrepEarly ? Math.max(0, Number(earlyPrepMaxBefore) || 0) : undefined,
+      preservationNotes: canPrepEarly ? preservationNotes.trim() || undefined : undefined,
       notes: notes.trim() || undefined,
       status: step?.status ?? 'pending',
       remainingSec:
@@ -175,8 +204,94 @@ export const StepModal: React.FC<StepModalProps> = ({
                     checked={mustFinishByDinner}
                     onChange={(e) => setMustFinishByDinner(e.target.checked)}
                   />
-                  Must be ready by Dinner Time
+                  Must be ready by Serve Time
                 </label>
+              </div>
+
+              {/* Manual Schedule Override */}
+              <div className="form-field">
+                <label htmlFor="step-pinned-start">
+                  Manual Start Time (optional, or drag on timeline)
+                </label>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    id="step-pinned-start"
+                    type="time"
+                    value={pinnedStartMin !== undefined ? minToTimeInput(pinnedStartMin) : ''}
+                    onChange={(e) => setPinnedStartMin(timeInputToMin(e.target.value))}
+                    style={{ flex: 1 }}
+                  />
+                  {pinnedStartMin !== undefined && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '5px 8px', fontSize: '0.74rem' }}
+                      onClick={() => setPinnedStartMin(undefined)}
+                    >
+                      Auto
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Early Prep & Preservation */}
+              <div
+                className="form-field full"
+                style={{
+                  padding: 10,
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-canvas)',
+                  gap: 8,
+                }}
+              >
+                <label className="dep-check-item">
+                  <input
+                    type="checkbox"
+                    checked={canPrepEarly}
+                    onChange={(e) => setCanPrepEarly(e.target.checked)}
+                  />
+                  <span>
+                    <strong>Can be completed early &amp; held/preserved</strong> until ready
+                  </span>
+                </label>
+                {canPrepEarly && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                      <span>Early prep window:</span>
+                      <input
+                        type="number"
+                        aria-label="Max minutes early"
+                        min={15}
+                        max={2880}
+                        value={earlyPrepMaxBefore}
+                        onChange={(e) => setEarlyPrepMaxBefore(Number(e.target.value))}
+                        style={{ width: 72 }}
+                      />
+                      <span>to</span>
+                      <input
+                        type="number"
+                        aria-label="Min minutes early"
+                        min={0}
+                        max={1440}
+                        value={earlyPrepMinBefore}
+                        onChange={(e) => setEarlyPrepMinBefore(Number(e.target.value))}
+                        style={{ width: 72 }}
+                      />
+                      <span>min before needed</span>
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="step-preservation">Preservation / Holding Steps</label>
+                      <input
+                        id="step-preservation"
+                        type="text"
+                        value={preservationNotes}
+                        onChange={(e) => setPreservationNotes(e.target.value)}
+                        placeholder="e.g., Cover tightly and refrigerate; bring to room temp 30m before baking"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {otherSteps.length > 0 && (
