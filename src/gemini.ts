@@ -108,6 +108,7 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
       dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(String) : [],
       readyBeforeIds: Array.isArray(item.readyBeforeIds) ? item.readyBeforeIds.map(String) : [],
       mustFinishByDinner: item.mustFinishByDinner !== false,
+      requiresTimer: item.requiresTimer !== false,
       notes: item.notes ? String(item.notes) : undefined,
       status: 'pending',
       remainingSec: durationMin * 60,
@@ -260,12 +261,13 @@ export async function processMealItemWithGemini(
   apiKey: string,
   item: MealItem,
   appliances: Appliance[],
-  otherItems: MealItem[] = []
+  otherItems: MealItem[] = [],
+  options?: { aiGuidance?: string; regenerateFresh?: boolean }
 ): Promise<ProcessedMealItemResult> {
   const appSummary = appliances
     .map(
       (a) =>
-        `- id: "${a.id}", name: "${a.name}", capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
+        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}", capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
           a.hasTemperature ? `, tolerance: ±${a.tempTolerance}°F` : ''
         }`
     )
@@ -278,16 +280,19 @@ export async function processMealItemWithGemini(
     .slice(0, 30)
     .join('\n');
 
+  const regenerateFresh = Boolean(options?.regenerateFresh) || item.steps.length === 0;
+  const aiGuidance = options?.aiGuidance?.trim();
+
   const manualLogText =
-    item.manualChangeLog.length > 0
-      ? `\nManual edits logged since last AI processing (MUST be respected/preserved):\n${item.manualChangeLog
+    !regenerateFresh && item.manualChangeLog.length > 0
+      ? `\nManual edits logged since last AI processing (preserve unless overridden by user notes or Gemini instructions):\n${item.manualChangeLog
           .map((m) => `- [${m.field}] ${m.summary}`)
           .join('\n')}\n`
       : '';
 
   const currentStepsText =
-    item.steps.length > 0
-      ? `\nCurrent steps on this item:\n${JSON.stringify(
+    !regenerateFresh && item.steps.length > 0
+      ? `\nCurrent steps on this item (you MUST update, split, reorder, or replace these whenever Primary Notes, Recipe Instructions, or User Instructions for Gemini ask for changes):\n${JSON.stringify(
           item.steps.map((s) => ({
             id: s.id,
             title: s.title,
@@ -298,6 +303,7 @@ export async function processMealItemWithGemini(
             dependencies: s.dependencies,
             readyBeforeIds: s.readyBeforeIds,
             mustFinishByDinner: s.mustFinishByDinner,
+            requiresTimer: s.requiresTimer !== false,
             notes: s.notes ?? '',
           })),
           null,
@@ -309,16 +315,29 @@ export async function processMealItemWithGemini(
 Analyze this single dish/meal item and produce:
 1. "convertedNotes": A clean, concise, sanitized kitchen summary of how to prepare and cook this item (stripping fluff, keeping exact temps, times, and key ingredients/cues).
 2. "prepAheadNotes": Optional short note on what can be prepped a day ahead or earlier in the day.
-3. "steps": A JSON array of concrete cooking/prep steps for this dish.
+3. "steps": A non-empty JSON array of concrete cooking/prep steps for this dish.
+
+${
+  aiGuidance
+    ? `HIGHEST PRIORITY — DIRECT USER INSTRUCTIONS FOR GEMINI (you MUST follow these instructions and override/split/rewrite existing steps accordingly):
+${aiGuidance}
+
+`
+    : ''
+}CRITICAL STEP-SPLITTING & TIMER RULES:
+- Whenever Primary Notes, Recipe Instructions, or Direct User Instructions describe distinct phases with separate timings or actions (for example: "sauté 6-7 minutes, then stir in thickener/spices, then boil and stir 2 more minutes"), you MUST split them into SEPARATE sequential steps linked with "dependencies" (e.g., step-2 depends on step-1, step-3 depends on step-2) instead of merging them into one combined step.
+- Even if Current Steps previously had steps merged together, ALWAYS prefer the user's Primary Notes, Recipe Instructions, and Direct User Instructions.
+- Set "requiresTimer": false for untimed manual prep tasks (e.g., peeling/chopping apples, setting out ingredients) that only need a start-time alert without a countdown alarm; set "requiresTimer": true for active cooking/baking/simmering/boiling steps that need a countdown timer.
+- Use "category:Oven" (or "" if unsure) for oven steps in multi-oven kitchens, and specific IDs like "stovetop" or "counter" for stovetop/counter prep.
 
 Dish Name: ${item.name}
 Course: ${item.course}
 ${item.servings ? `Servings: ${item.servings}\n` : ''}${
     item.sourceUrl ? `Source URL: ${item.sourceUrl}\n` : ''
   }
-Primary Raw Notes / Recipe:
+Primary Raw Notes & Recipe Instructions:
 ${item.rawNotes || '(No raw notes provided yet — infer standard steps from the dish name)'}
-${item.convertedNotes ? `\nPrevious Converted Notes:\n${item.convertedNotes}\n` : ''}${currentStepsText}${manualLogText}
+${!regenerateFresh && item.convertedNotes ? `\nPrevious Converted Notes:\n${item.convertedNotes}\n` : ''}${currentStepsText}${manualLogText}
 Available appliances:
 ${appSummary}
 ${otherStepsSummary ? `\nOther steps in this event (you may reference their IDs in dependencies/readyBeforeIds if needed):\n${otherStepsSummary}\n` : ''}
@@ -331,13 +350,14 @@ Return ONLY a valid JSON object with this exact shape:
       "id": "unique-kebab-id",
       "title": "Short action title",
       "dish": "${item.name}",
-      "durationMin": 30,
-      "applianceId": "oven",
+      "durationMin": 7,
+      "applianceId": "stovetop",
       "slotsRequired": 1,
-      "temperature": 350,
+      "temperature": null,
       "dependencies": [],
       "readyBeforeIds": [],
       "mustFinishByDinner": true,
+      "requiresTimer": true,
       "notes": "Key cue"
     }
   ]
@@ -360,7 +380,13 @@ Return ONLY a valid JSON object with this exact shape:
     steps?: unknown[];
   };
 
-  const steps = parseImportedSteps(JSON.stringify(parsed.steps ?? []), appliances).map((s) => ({
+  if (!Array.isArray(parsed.steps) || parsed.steps.length === 0) {
+    throw new Error(
+      'Gemini did not return any steps. Try adding a brief note in "Instructions for Gemini" or clicking "Regenerate Fresh".'
+    );
+  }
+
+  const steps = parseImportedSteps(JSON.stringify(parsed.steps), appliances).map((s) => ({
     ...s,
     dish: item.name,
   }));

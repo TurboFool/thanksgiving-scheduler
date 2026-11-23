@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.5.1] — 2026-11-22
+
+### Fixed & Added
+- **Instructions for Gemini & Step-Splitting (`MealItemModal`, `gemini.ts`)**: Added a dedicated **Instructions for Gemini** field right in the dish AI Processing Bar so you can tell Gemini how to split, adjust, or re-time steps (e.g., splitting a combined 10-min sauté into 7-min sauté, stir-in, and 2-min boil), plus a **Regenerate Fresh** button.
+- **Fixed Deleted-Steps Regeneration Bug**: When all steps are deleted (`steps.length === 0`) or **Regenerate Fresh** is clicked, `processMealItemWithGemini` now ignores stale `Current steps`, `Previous Converted Notes`, and deletion logs (`manualChangeLog`) so Gemini cleanly regenerates steps from your recipe and notes instead of getting stuck.
+
+---
+
 ## [2.5.0] — 2026-11-22
 
 ### Added

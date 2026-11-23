@@ -117,6 +117,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const [scaleLoading, setScaleLoading] = useState(false);
   const [quickFillInput, setQuickFillInput] = useState('');
   const [quickFillLoading, setQuickFillLoading] = useState(false);
+  const [aiGuidance, setAiGuidance] = useState('');
   const [aiError, setAiError] = useState<string | null>(null);
   const [scaleReview, setScaleReview] = useState<ScaledRecipeReviewResult | null>(null);
   const [appliedScaleUpdates, setAppliedScaleUpdates] = useState(false);
@@ -288,14 +289,20 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
     appendManualLog('step:removed', `Removed step "${title}"`);
   };
 
-  const handleProcessWithAI = async () => {
+  const handleProcessWithAI = async (regenerateFresh = false) => {
     setAiError(null);
     if (!apiKey.trim()) {
       setAiError('Configure your Gemini API key in Settings first.');
       return;
     }
-    if (!name.trim() && !rawNotes.trim() && baseIngredients.length === 0 && !recipeInstructions.trim()) {
-      setAiError('Enter a dish name, recipe, or raw notes first.');
+    if (
+      !name.trim() &&
+      !rawNotes.trim() &&
+      baseIngredients.length === 0 &&
+      !recipeInstructions.trim() &&
+      !aiGuidance.trim()
+    ) {
+      setAiError('Enter a dish name, recipe, raw notes, or instructions for Gemini first.');
       return;
     }
     setAiLoading(true);
@@ -312,13 +319,15 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
         apiKey,
         { ...draft, rawNotes: combinedNotes },
         appliances,
-        otherItems
+        otherItems,
+        { aiGuidance, regenerateFresh }
       );
       setConvertedNotes(result.convertedNotes);
       if (result.prepAheadNotes) setPrepAheadNotes(result.prepAheadNotes);
       setSteps(result.steps);
       setAiProcessedAt(Date.now());
       setManualChangeLog([]);
+      setAiGuidance('');
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Failed to process item with Gemini');
     } finally {
@@ -883,55 +892,77 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
               <div
                 className="form-field full"
                 style={{
-                  padding: 10,
+                  padding: 12,
                   borderRadius: 'var(--radius-sm)',
                   background: 'var(--accent-sage-soft)',
                   border: '1px solid var(--border-strong)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
                 }}
               >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem' }}>
+                  <Sparkles size={15} color="var(--accent-sage)" />
+                  {apiKey.trim() ? (
+                    <span style={{ fontWeight: 600 }}>
+                      Instructions for Gemini (optional — tell Gemini how to split, adjust, or time steps)
+                    </span>
+                  ) : (
+                    <span>
+                      No Gemini API key configured.{' '}
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        style={{ padding: '2px 6px', fontSize: '0.78rem', textDecoration: 'underline' }}
+                        onClick={() => {
+                          onClose();
+                          onOpenSettings();
+                        }}
+                      >
+                        Open Settings
+                      </button>
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  rows={2}
+                  value={aiGuidance}
+                  onChange={(e) => setAiGuidance(e.target.value)}
+                  placeholder='e.g., "Split the 10-min sauté into 7 min sautéing apples, stir in thickener/spices, then 2 min boil & stir. Mark apple peeling as Start Alert (no timer)."'
+                  style={{ background: 'var(--bg-surface)', fontSize: '0.82rem' }}
+                />
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 10,
+                    justifyContent: 'flex-end',
+                    gap: 8,
                     flexWrap: 'wrap',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem' }}>
-                    <Sparkles size={15} color="var(--accent-sage)" />
-                    {apiKey.trim() ? (
-                      <span>Use Gemini AI to sanitize notes and generate cooking steps.</span>
-                    ) : (
-                      <span>
-                        No Gemini API key configured.{' '}
-                        <button
-                          type="button"
-                          className="btn-ghost"
-                          style={{ padding: '2px 6px', fontSize: '0.78rem', textDecoration: 'underline' }}
-                          onClick={() => {
-                            onClose();
-                            onOpenSettings();
-                          }}
-                        >
-                          Open Settings
-                        </button>
-                      </span>
-                    )}
-                  </div>
+                  {steps.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => handleProcessWithAI(true)}
+                      disabled={aiLoading}
+                      title="Ignore previous steps/edits and regenerate all steps fresh from recipe & instructions"
+                    >
+                      <Sparkles size={14} />
+                      Regenerate Fresh
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-primary"
-                    onClick={handleProcessWithAI}
+                    onClick={() => handleProcessWithAI(false)}
                     disabled={aiLoading}
                   >
                     <Sparkles size={14} />
                     {aiLoading
                       ? 'Processing...'
-                      : aiProcessedAt
-                      ? manualChangeLog.length > 0
-                        ? 'Reprocess & Reconcile Manual Edits'
-                        : 'Reprocess with Gemini'
+                      : aiProcessedAt || steps.length > 0
+                      ? 'Update Steps from Notes & Guidance'
                       : 'Process Notes & Generate Steps'}
                   </button>
                 </div>
