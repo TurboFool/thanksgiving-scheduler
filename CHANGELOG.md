@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.7.1] — 2026-11-23
+
+### Fixed & Improved
+- **Staggered Vertical Callout Planes for Crowded Gantt Steps (`GanttTimeline.tsx`)**: Narrow callout labels now detect collisions with both adjacent task bars and neighboring callout pills, automatically staggering onto separate vertical planes below the bars (with a vertical connector stem and dynamic lane-height expansion) so crowded sequences like *Melt Butter → Sauté Apples → Thicken and Boil Sauce* never overlap each other.
+
+---
+
 ## [2.7.0] — 2026-11-23
 
 ### Added

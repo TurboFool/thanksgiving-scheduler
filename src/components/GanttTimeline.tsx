@@ -234,11 +234,15 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
     [appliances]
   );
 
-  // Compute lane heights and step Y positions for SVG dependency arrows
+  // Compute lane heights, step Y positions, and staggered callout planes for crowded narrow bars
   const laneLayout = useMemo(() => {
+    const CALLOUT_PLANE_H = 26;
     let yCursor = 0;
     const laneMeta = new Map<string, { top: number; height: number; rows: number }>();
-    const stepRects = new Map<string, { x: number; y: number; w: number; h: number }>();
+    const stepRects = new Map<
+      string,
+      { x: number; y: number; w: number; h: number; calloutPlane: number; calloutTopInLane: number }
+    >();
 
     if (unassignedSteps.length > 0) {
       const rows = unassignedSteps.length;
@@ -249,7 +253,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
         const w = Math.max(120, (s.endMin - s.startMin) * pxPerMin);
         const y = yCursor + LANE_PAD_Y + idx * ROW_HEIGHT + 3;
         const h = ROW_HEIGHT - 6;
-        stepRects.set(s.id, { x, y, w, h });
+        stepRects.set(s.id, { x, y, w, h, calloutPlane: 0, calloutTopInLane: 0 });
       });
       yCursor += height;
     }
@@ -261,22 +265,88 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
         maxRowUsed = Math.max(maxRowUsed, s.laneRow + Math.max(1, s.slotsRequired));
       }
       const rows = Math.max(1, maxRowUsed);
-      const height = rows * ROW_HEIGHT + LANE_PAD_Y * 2;
-      laneMeta.set(app.id, { top: yCursor, height, rows });
+      const barsBottomInLane = rows * ROW_HEIGHT + LANE_PAD_Y;
 
-      for (const s of appSteps) {
+      // Compute bar rectangles first
+      const barEntries = appSteps.map((s) => {
         const x = (s.startMin - startBound) * pxPerMin;
         const w = Math.max(32, (s.endMin - s.startMin) * pxPerMin);
         const slotSpan = Math.min(rows - s.laneRow, Math.max(1, s.slotsRequired));
         const y = yCursor + LANE_PAD_Y + s.laneRow * ROW_HEIGHT + 3;
         const h = slotSpan * ROW_HEIGHT - 6;
-        stepRects.set(s.id, { x, y, w, h });
+        return { s, x, w, y, h };
+      });
+
+      // Plane 0 is inline beside the bar; seed it with all bar footprints so inline callouts
+      // never overlap adjacent bars on laneRow 0. Planes 1+ sit cleanly below the bars.
+      const planeIntervals: Array<Array<{ start: number; end: number; stepId?: string }>> = [
+        barEntries.map((b) => ({ start: b.x - 2, end: b.x + b.w + 2, stepId: b.s.id })),
+      ];
+
+      const narrowEntries = barEntries
+        .filter((b) => b.w < 110)
+        .sort((a, b) => a.x - b.x);
+
+      const calloutAssignments = new Map<string, { plane: number; topInLane: number }>();
+
+      for (const entry of narrowEntries) {
+        const estWidth = Math.min(220, Math.max(84, entry.s.title.length * 6.8 + 46));
+        const nearRightEdge = entry.x + entry.w > trackWidth - 180;
+
+        // Plane 0 sits beside the bar; Planes 1+ sit below the bars aligned with the bar's edge
+        let chosenPlane = -1;
+        for (let p = 0; p < planeIntervals.length; p++) {
+          const pStart =
+            p === 0
+              ? nearRightEdge
+                ? entry.x - estWidth - 5
+                : entry.x + entry.w + 5
+              : nearRightEdge
+              ? entry.x + entry.w - estWidth
+              : entry.x;
+          const pEnd = pStart + estWidth;
+
+          const overlaps = planeIntervals[p].some(
+            (iv) => iv.stepId !== entry.s.id && iv.start < pEnd + 6 && iv.end > pStart - 6
+          );
+          if (!overlaps) {
+            chosenPlane = p;
+            planeIntervals[p].push({ start: pStart, end: pEnd, stepId: entry.s.id });
+            break;
+          }
+        }
+
+        if (chosenPlane === -1) {
+          chosenPlane = planeIntervals.length;
+          const pStart = nearRightEdge ? entry.x + entry.w - estWidth : entry.x;
+          planeIntervals.push([{ start: pStart, end: pStart + estWidth, stepId: entry.s.id }]);
+        }
+
+        const topInLane =
+          chosenPlane === 0 ? 0 : barsBottomInLane + (chosenPlane - 1) * CALLOUT_PLANE_H + 2;
+        calloutAssignments.set(entry.s.id, { plane: chosenPlane, topInLane });
+      }
+
+      const extraPlanes = Math.max(0, planeIntervals.length - 1);
+      const height = rows * ROW_HEIGHT + LANE_PAD_Y * 2 + extraPlanes * CALLOUT_PLANE_H;
+      laneMeta.set(app.id, { top: yCursor, height, rows });
+
+      for (const b of barEntries) {
+        const assigned = calloutAssignments.get(b.s.id);
+        stepRects.set(b.s.id, {
+          x: b.x,
+          y: b.y,
+          w: b.w,
+          h: b.h,
+          calloutPlane: assigned?.plane ?? 0,
+          calloutTopInLane: assigned?.topInLane ?? 0,
+        });
       }
       yCursor += height;
     }
 
     return { laneMeta, stepRects, totalHeight: yCursor };
-  }, [appliances, steps, unassignedSteps, startBound, pxPerMin]);
+  }, [appliances, steps, unassignedSteps, startBound, pxPerMin, trackWidth]);
 
   const nowX = (nowMin - startBound) * pxPerMin;
   const dinnerX = (targetDinnerMin - startBound) * pxPerMin;
@@ -612,29 +682,65 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                               : ''
                           }`}
                         >
-                          {isNarrow && !isDraggingThis && (
-                            <div
-                              className={`gantt-task-callout ${
-                                calloutLeft ? 'align-left' : 'align-right'
-                              }`}
-                              style={{ borderLeft: `3px solid ${app.color}` }}
-                            >
-                              <span
-                                style={{
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                }}
-                              >
-                                {s.title}
-                              </span>
-                              <span
-                                className="mono"
-                                style={{ fontSize: '0.66rem', color: 'var(--ink-muted)', flexShrink: 0 }}
-                              >
-                                {formatDuration(s.endMin - s.startMin)}
-                              </span>
-                            </div>
-                          )}
+                          {isNarrow && !isDraggingThis && (() => {
+                            const barTopInLane = rect.y - meta.top;
+                            const isStaggered = rect.calloutPlane > 0;
+                            const relTop = isStaggered ? rect.calloutTopInLane - barTopInLane : 0;
+                            return (
+                              <>
+                                {isStaggered && (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      top: rect.h,
+                                      left: calloutLeft ? undefined : Math.min(10, rect.w / 2),
+                                      right: calloutLeft ? Math.min(10, rect.w / 2) : undefined,
+                                      width: 1.5,
+                                      height: Math.max(4, relTop - rect.h + 4),
+                                      background: app.color,
+                                      opacity: 0.65,
+                                      pointerEvents: 'none',
+                                    }}
+                                  />
+                                )}
+                                <div
+                                  className={`gantt-task-callout ${
+                                    isStaggered
+                                      ? ''
+                                      : calloutLeft
+                                      ? 'align-left'
+                                      : 'align-right'
+                                  }`}
+                                  style={{
+                                    borderLeft: `3px solid ${app.color}`,
+                                    ...(isStaggered
+                                      ? {
+                                          top: relTop,
+                                          transform: 'none',
+                                          left: calloutLeft ? undefined : 0,
+                                          right: calloutLeft ? 0 : undefined,
+                                        }
+                                      : {}),
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                    }}
+                                  >
+                                    {s.title}
+                                  </span>
+                                  <span
+                                    className="mono"
+                                    style={{ fontSize: '0.66rem', color: 'var(--ink-muted)', flexShrink: 0 }}
+                                  >
+                                    {formatDuration(s.endMin - s.startMin)}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()}
                           {isDraggingThis && (
                             <div
                               style={{
