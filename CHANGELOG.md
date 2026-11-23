@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.6.3] — 2026-11-23
+
+### Fixed
+- **Pass 1 Prerequisite Pull for `relativeDeps` (`scheduler.ts`)**: When a time-relative step (e.g., *Add sliced apples to cider*, 60m before *Heat cider* ends) has its own finish-to-start prerequisites (e.g., *Slice apples*), Pass 1 now pulls those prerequisites earlier to match the `relativeDeps` start time instead of leaving them at the end of the dish.
+- **Gemini `relativeDeps` Step ID Validation (`gemini.ts`)**: Normalized and validated `relativeDeps[].stepId` against generated step IDs and titles so a mismatched ID no longer silently defaults to the first step in the dropdown.
+
+---
+
 ## [2.6.2] — 2026-11-23
 
 ### Fixed & Added

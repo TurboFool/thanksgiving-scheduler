@@ -441,10 +441,32 @@ Return ONLY a valid JSON object with this exact shape:
     );
   }
 
-  const steps = parseImportedSteps(JSON.stringify(parsed.steps), appliances).map((s) => ({
+  const rawParsedSteps = parseImportedSteps(JSON.stringify(parsed.steps), appliances).map((s) => ({
     ...s,
     dish: item.name,
   }));
+
+  const allKnownSteps = [...rawParsedSteps, ...otherItems.flatMap((o) => o.steps)];
+  const knownIds = new Set(allKnownSteps.map((s) => s.id));
+  const steps = rawParsedSteps.map((s) => {
+    if (!s.relativeDeps?.length) return s;
+    const resolvedRels = s.relativeDeps
+      .map((rel) => {
+        if (knownIds.has(rel.stepId)) return rel;
+        const norm = rel.stepId.toLowerCase().trim();
+        const match = allKnownSteps.find(
+          (cand) =>
+            cand.id !== s.id &&
+            (cand.title.toLowerCase().includes(norm) || norm.includes(cand.title.toLowerCase()))
+        );
+        return match ? { ...rel, stepId: match.id } : null;
+      })
+      .filter((r): r is NonNullable<typeof r> => Boolean(r));
+    return {
+      ...s,
+      relativeDeps: resolvedRels.length > 0 ? resolvedRels : undefined,
+    };
+  });
 
   return {
     convertedNotes: String(parsed.convertedNotes ?? item.convertedNotes ?? '').trim(),

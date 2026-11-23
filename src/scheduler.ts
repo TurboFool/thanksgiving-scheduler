@@ -357,6 +357,27 @@ export function computeSchedule(
     }
   }
 
+  // Pull any finish-to-start prerequisites earlier if a relativeDeps step now starts earlier
+  for (let i = topoOrder.length - 1; i >= 0; i--) {
+    const id = topoOrder[i];
+    const step = stepMap.get(id)!;
+    if (step.pinnedStartMin !== undefined) continue;
+    const myEnd = idealEnd.get(id);
+    if (myEnd === undefined) continue;
+    let maxAllowedEnd = myEnd;
+    for (const depId of dependents.get(id) ?? []) {
+      const depStart = idealStart.get(depId);
+      if (depStart !== undefined && depStart < maxAllowedEnd) {
+        maxAllowedEnd = depStart;
+      }
+    }
+    if (maxAllowedEnd < myEnd) {
+      const duration = Math.max(1, step.durationMin);
+      idealEnd.set(id, maxAllowedEnd);
+      idealStart.set(id, maxAllowedEnd - duration);
+    }
+  }
+
   let suggestedStartMin = Infinity;
   for (const st of idealStart.values()) {
     if (st < suggestedStartMin) suggestedStartMin = st;
