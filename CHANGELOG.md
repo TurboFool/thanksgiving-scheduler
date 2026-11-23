@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.0.1] — 2026-11-22
+
+### Fixed
+- Fixed HTML5 `step` validation mismatch on the custom portion multiplier input in `MealItemModal` (`min={0.1}` + `step="any"`) so `1X`, `0.5X`, `1.5X`, `2X`, `3X`, and custom decimals submit without validation errors.
+
+---
+
 ## [2.0.0] — 2026-11-22
 
 ### Added

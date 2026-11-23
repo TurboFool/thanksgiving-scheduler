@@ -584,7 +584,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                       aria-label="Custom portion multiplier"
                       min={0.1}
                       max={20}
-                      step={0.25}
+                      step="any"
                       value={portionMultiplier}
                       onChange={(e) =>
                         setPortionMultiplier(Math.max(0.1, Number(e.target.value) || 1))
