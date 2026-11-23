@@ -1,6 +1,7 @@
-import type { Appliance, MealItem, MealStep, ScheduledStep } from './types';
+import type { Appliance, DishCourse, FinishConstraint, MealItem, MealStep, ScheduledStep } from './types';
 import { formatTimeMin } from './scheduler';
 import { scaleIngredients } from './recipeScaler';
+import { stepsToMealItems } from './workspace';
 
 export function buildGeminiChatPrompt(
   appliances: Appliance[],
@@ -66,6 +67,119 @@ Rules:
       ? '\n5. Return ONLY the NEW steps (do NOT include existing steps), using unique kebab-case IDs that do not collide with existing IDs.\n6. Return ONLY the JSON array.'
       : '\n5. Return ONLY the JSON array.'
   }`;
+}
+
+export function buildGeminiSkillInstructions(appliances: Appliance[]): string {
+  const appSummary = appliances
+    .map(
+      (a) =>
+        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}", capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
+          a.hasTemperature ? `, tolerance: ±${a.tempTolerance}°F` : ''
+        }`
+    )
+    .join('\n');
+
+  const categories = Array.from(
+    new Set(appliances.map((a) => (a.category || '').trim()).filter(Boolean))
+  );
+
+  return `You are a culinary planning & recipe-structuring assistant for **ThymeLine** (a kitchen timeline scheduler).
+
+## Your Role
+Help the user brainstorm menus, extract recipes from photos/screenshots/URLs/notes, scale portions, and structure dishes. Whenever the user asks to export, format, or prepare a dish (or a collection of dishes) for ThymeLine, output a **single valid JSON code block** matching the ThymeLine MealItem schema below.
+
+## User's Current Kitchen Appliances
+${appSummary}
+
+Available auto-balance categories (use \`"category:<Name>"\` for multi-unit appliances like Ovens so ThymeLine can automatically balance racks/temps across units, or \`""\` if location should be chosen per event):
+${categories.map((c) => `- "category:${c}"`).join('\n') || '- (none)'}
+
+## Output Schema (Return a JSON array of MealItem objects, or a single MealItem object)
+\`\`\`json
+[
+  {
+    "name": "Hot Apple Cider",
+    "course": "Beverage",
+    "servings": "8 servings",
+    "sourceUrl": "https://example.com/recipe (optional)",
+    "ingredients": [
+      "8 cups apple cider",
+      "2 tbsp mulling spices",
+      "2 apples, thinly sliced"
+    ],
+    "recipeInstructions": "Clean full method...",
+    "rawNotes": "Key reminders or user preferences...",
+    "prepAheadNotes": "Optional day-ahead or early-prep summary...",
+    "finishConstraint": { "mode": "before_target", "offsetMin": 60 },
+    "steps": [
+      {
+        "id": "bag-spices",
+        "title": "Bag spices & fill slow cooker",
+        "durationMin": 5,
+        "applianceId": "counter",
+        "slotsRequired": 1,
+        "temperature": null,
+        "dependencies": [],
+        "readyBeforeIds": [],
+        "relativeDeps": [],
+        "mustFinishByDinner": true,
+        "requiresTimer": false,
+        "canPrepEarly": true,
+        "earlyPrepMinBefore": 15,
+        "earlyPrepMaxBefore": 240,
+        "preservationNotes": "Keep covered until ready to heat",
+        "notes": "Submerge spice bag in cider"
+      },
+      {
+        "id": "heat-cider",
+        "title": "Heat cider in slow cooker",
+        "durationMin": 180,
+        "applianceId": "slowcooker",
+        "slotsRequired": 1,
+        "temperature": null,
+        "dependencies": ["bag-spices"],
+        "readyBeforeIds": [],
+        "relativeDeps": [],
+        "mustFinishByDinner": true,
+        "requiresTimer": true,
+        "notes": "Low heat for 3 hours"
+      },
+      {
+        "id": "add-apples",
+        "title": "Add sliced apples to cider",
+        "durationMin": 2,
+        "applianceId": "slowcooker",
+        "slotsRequired": 1,
+        "temperature": null,
+        "dependencies": [],
+        "readyBeforeIds": [],
+        "relativeDeps": [
+          { "stepId": "heat-cider", "anchor": "before_end", "offsetMin": 60 }
+        ],
+        "mustFinishByDinner": false,
+        "requiresTimer": false,
+        "notes": "Stir in 1 hour before cider finishes so apples soften without overcooking"
+      }
+    ]
+  }
+]
+\`\`\`
+
+## Strict Formatting Rules
+1. **Valid Courses**: \`"Main"\`, \`"Side"\`, \`"Appetizer"\`, \`"Sauce / Gravy"\`, \`"Bread"\`, \`"Dessert"\`, \`"Beverage"\`, \`"Prep / Other"\`.
+2. **Finish Constraints (\`finishConstraint\`)**:
+   - \`{ "mode": "at_target" }\` — ready right at Serve Time
+   - \`{ "mode": "before_target", "offsetMin": 30 }\` — finish X min before Serve Time (resting, appetizers, etc.)
+   - \`{ "mode": "window", "windowMinBeforeMin": 20 }\` — flexible window before Serve Time
+   - \`{ "mode": "after_target" }\` — after Serve Time (e.g., dessert)
+3. **Timed vs. Untimed Prep (\`requiresTimer\`)**:
+   - \`false\` for manual prep tasks (peeling, slicing, setting out) that only need a start-time alert.
+   - \`true\` for active cooking/baking/simmering steps that need a countdown timer.
+4. **Concurrent Mid-Timer Actions (\`relativeDeps\`)**:
+   - When a step happens *during* another ongoing timer (e.g., adding apples 60m before cider ends, or basting 30m after roast starts), use \`"relativeDeps": [{ "stepId": "<target-id>", "anchor": "before_end" | "after_start" | "after_end", "offsetMin": 60 }]\` and leave that target OUT of \`"dependencies"\`.
+5. **Split Distinct Phases**: Never merge distinct timed phases (e.g., "sauté 7m, stir in thickener, boil 2m") into one step — split them into sequential steps linked via \`"dependencies"\`.
+6. **Valid Appliance IDs**: Use only the appliance IDs listed above, \`"category:<Name>"\`, or \`""\` (unassigned). Omit/null \`temperature\` when \`hasTemperature\` is \`false\`.
+7. When the user says they are ready to import, return **ONLY the JSON code block** with no extra commentary inside the JSON.`;
 }
 
 export function parseImportedSteps(rawInput: string, appliances: Appliance[]): MealStep[] {
@@ -138,12 +252,182 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
         : undefined,
       mustFinishByDinner: item.mustFinishByDinner !== false,
       requiresTimer: item.requiresTimer !== false,
+      canPrepEarly: item.canPrepEarly === true ? true : undefined,
+      earlyPrepMinBefore:
+        item.canPrepEarly === true && item.earlyPrepMinBefore !== undefined
+          ? Math.max(0, Number(item.earlyPrepMinBefore) || 0)
+          : undefined,
+      earlyPrepMaxBefore:
+        item.canPrepEarly === true && item.earlyPrepMaxBefore !== undefined
+          ? Math.max(0, Number(item.earlyPrepMaxBefore) || 0)
+          : undefined,
+      preservationNotes: item.preservationNotes ? String(item.preservationNotes) : undefined,
       notes: item.notes ? String(item.notes) : undefined,
       status: 'pending',
       remainingSec: durationMin * 60,
       addedMin: 0,
     };
   });
+}
+
+const VALID_COURSES = new Set<DishCourse>([
+  'Main',
+  'Side',
+  'Appetizer',
+  'Sauce / Gravy',
+  'Bread',
+  'Dessert',
+  'Beverage',
+  'Prep / Other',
+]);
+
+function normalizeFinishConstraint(raw: unknown): FinishConstraint {
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    const mode = obj.mode;
+    if (
+      mode === 'at_target' ||
+      mode === 'before_target' ||
+      mode === 'window' ||
+      mode === 'after_target'
+    ) {
+      return {
+        mode,
+        ...(obj.offsetMin !== undefined ? { offsetMin: Math.max(0, Number(obj.offsetMin) || 0) } : {}),
+        ...(obj.windowMinBeforeMin !== undefined
+          ? { windowMinBeforeMin: Math.max(0, Number(obj.windowMinBeforeMin) || 0) }
+          : {}),
+      };
+    }
+  }
+  return { mode: 'at_target' };
+}
+
+/**
+ * Parses JSON from Gemini in ANY of these formats:
+ * - A single MealItem object ({ name, course, ..., steps: [...] })
+ * - An array of MealItem objects ([ { name, ..., steps: [...] }, ... ])
+ * - An object wrapping { meals: [...] } or { mealItems: [...] }
+ * - A legacy flat MealStep[] array ([ { id, title, dish, ... } ]) or { steps: [...] }
+ */
+export function parseImportedMeals(
+  rawInput: string,
+  appliances: Appliance[],
+  existingSteps: MealStep[] = []
+): MealItem[] {
+  let cleaned = rawInput.trim();
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  }
+
+  const parsed = JSON.parse(cleaned) as unknown;
+
+  // Unwrap { meals } / { mealItems } / single MealItem
+  let mealCandidates: unknown[] | null = null;
+  if (Array.isArray(parsed)) {
+    const looksLikeMealArray =
+      parsed.length > 0 &&
+      typeof parsed[0] === 'object' &&
+      parsed[0] !== null &&
+      Array.isArray((parsed[0] as Record<string, unknown>).steps) &&
+      typeof (parsed[0] as Record<string, unknown>).name === 'string';
+    if (looksLikeMealArray) {
+      mealCandidates = parsed;
+    }
+  } else if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    if (Array.isArray(obj.meals)) {
+      mealCandidates = obj.meals;
+    } else if (Array.isArray(obj.mealItems)) {
+      mealCandidates = obj.mealItems;
+    } else if (Array.isArray(obj.steps) && typeof obj.name === 'string') {
+      mealCandidates = [obj];
+    }
+  }
+
+  // Fallback to legacy MealStep[] grouping
+  if (!mealCandidates) {
+    const rawSteps = parseImportedSteps(rawInput, appliances);
+    const merged = mergeImportedSteps(existingSteps, rawSteps);
+    const newSlice = merged.slice(existingSteps.length);
+    return stepsToMealItems(newSlice);
+  }
+
+  const now = Date.now();
+  const usedStepIds = new Set(existingSteps.map((s) => s.id));
+  const result: MealItem[] = [];
+
+  mealCandidates.forEach((rawMeal, idx) => {
+    if (!rawMeal || typeof rawMeal !== 'object') return;
+    const m = rawMeal as Record<string, unknown>;
+    const dishName = String(m.name || `Imported Dish ${idx + 1}`).trim();
+    const rawCourse = String(m.course || 'Side') as DishCourse;
+    const course: DishCourse = VALID_COURSES.has(rawCourse) ? rawCourse : 'Side';
+    const finishConstraint = normalizeFinishConstraint(m.finishConstraint);
+
+    const parsedSteps = parseImportedSteps(JSON.stringify(m.steps ?? []), appliances).map(
+      (s) => ({
+        ...s,
+        dish: dishName,
+        finishConstraint: s.finishConstraint ?? finishConstraint,
+      })
+    );
+
+    // Ensure unique step IDs across existing event steps & other imported meals
+    const idRemap = new Map<string, string>();
+    for (const s of parsedSteps) {
+      let nextId = s.id;
+      if (usedStepIds.has(nextId)) {
+        let suffix = 2;
+        while (usedStepIds.has(`${s.id}-${suffix}`)) suffix++;
+        nextId = `${s.id}-${suffix}`;
+      }
+      idRemap.set(s.id, nextId);
+      usedStepIds.add(nextId);
+    }
+
+    const remappedSteps: MealStep[] = parsedSteps.map((s) => ({
+      ...s,
+      id: idRemap.get(s.id) ?? s.id,
+      dependencies: s.dependencies.map((d) => idRemap.get(d) ?? d),
+      readyBeforeIds: s.readyBeforeIds.map((d) => idRemap.get(d) ?? d),
+      relativeDeps: s.relativeDeps?.map((r) => ({
+        ...r,
+        stepId: idRemap.get(r.stepId) ?? r.stepId,
+      })),
+    }));
+
+    const ingredients = Array.isArray(m.ingredients)
+      ? m.ingredients.map((x) => String(x).trim()).filter(Boolean)
+      : undefined;
+
+    result.push({
+      id: `item-${now}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+      name: dishName,
+      course,
+      servings: m.servings ? String(m.servings).trim() : undefined,
+      portionMultiplier: 1,
+      dietaryTags: Array.isArray(m.dietaryTags)
+        ? m.dietaryTags.map((x) => String(x).trim()).filter(Boolean)
+        : undefined,
+      sourceUrl: m.sourceUrl ? String(m.sourceUrl).trim() : undefined,
+      ingredients,
+      recipeInstructions: m.recipeInstructions ? String(m.recipeInstructions).trim() : undefined,
+      rawNotes: String(m.rawNotes ?? m.recipeInstructions ?? '').trim(),
+      convertedNotes: String(m.convertedNotes ?? m.rawNotes ?? '').trim(),
+      prepAheadNotes: m.prepAheadNotes ? String(m.prepAheadNotes).trim() : undefined,
+      finishConstraint,
+      steps: remappedSteps,
+      manualChangeLog: [],
+      updatedAt: now,
+    });
+  });
+
+  if (result.length === 0) {
+    throw new Error('No valid meal items found in the JSON.');
+  }
+  return result;
 }
 
 export const GEMINI_MODELS = [

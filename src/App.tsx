@@ -37,7 +37,6 @@ import { DEFAULT_APPLIANCES, DEFAULT_STEPS } from './defaultData';
 import { computeSchedule, formatCountdownSec, formatDuration, formatTimeMin } from './scheduler';
 import { soundManager } from './audio';
 import {
-  mergeImportedSteps,
   reEvaluateEventWithGemini,
   type ScheduleAdjustmentProposal,
 } from './gemini';
@@ -2230,25 +2229,34 @@ export function App() {
           apiKey={settings.geminiApiKey}
           onOpenSettings={() => setShowSettingsModal(true)}
           onApplyScheduleUpdates={handleApplyScheduleUpdates}
-          onImportSteps={(imported, mode) => {
-            const newItems = stepsToMealItems(imported);
+          onImportMeals={(importedMeals, mode) => {
+            const totalSteps = importedMeals.reduce((sum, m) => sum + m.steps.length, 0);
             if (mode === 'add') {
-              pushUndo(`Add ${imported.length} step${imported.length === 1 ? '' : 's'} via Gemini`);
-              const merged = mergeImportedSteps(steps, imported);
-              const mergedIds = new Set(merged.slice(steps.length).map((s) => s.id));
-              const addedItems = stepsToMealItems(merged.filter((s) => mergedIds.has(s.id)));
+              pushUndo(
+                `Import ${importedMeals.length} dish${importedMeals.length === 1 ? '' : 'es'} via Gemini`
+              );
               updateActiveEvent((ev) => ({
                 ...ev,
-                mealItems: [...ev.mealItems, ...addedItems],
+                mealItems: [...ev.mealItems, ...importedMeals],
               }));
-              showToast(`Added ${imported.length} step(s) to ${activeEvent.name}`);
+              promptScheduleReviewForDish(
+                importedMeals.length === 1
+                  ? importedMeals[0].name
+                  : `${importedMeals.length} imported dishes`,
+                importedMeals.flatMap((m) => m.steps)
+              );
+              showToast(
+                `Added ${importedMeals.length} dish${importedMeals.length === 1 ? '' : 'es'} (${totalSteps} steps) to ${activeEvent.name}`
+              );
             } else {
               pushUndo('Import schedule');
-              updateActiveEvent((ev) => ({ ...ev, mealItems: newItems }));
+              updateActiveEvent((ev) => ({ ...ev, mealItems: importedMeals }));
               setSelectedStepId(null);
               setSelectedDish(null);
               setMutedAlarms(new Set());
-              showToast(`Imported ${imported.length} step(s) into ${activeEvent.name}`);
+              showToast(
+                `Imported ${importedMeals.length} dish${importedMeals.length === 1 ? '' : 'es'} (${totalSteps} steps) into ${activeEvent.name}`
+              );
             }
           }}
           onClose={() => setShowGeminiModal(false)}

@@ -13,9 +13,10 @@ import {
 import type { Appliance, MealItem, MealStep, ScheduledStep } from '../types';
 import {
   buildGeminiChatPrompt,
+  buildGeminiSkillInstructions,
   evaluateAndAdjustScheduleWithGemini,
   generateScheduleWithGemini,
-  parseImportedSteps,
+  parseImportedMeals,
   type ScheduleAdjustmentProposal,
 } from '../gemini';
 
@@ -29,7 +30,7 @@ interface GeminiModalProps {
   apiKey: string;
   onOpenSettings: () => void;
   onApplyScheduleUpdates: (updates: ScheduleAdjustmentProposal[]) => void;
-  onImportSteps: (steps: MealStep[], mode: 'add' | 'replace') => void;
+  onImportMeals: (meals: MealItem[], mode: 'add' | 'replace') => void;
   onClose: () => void;
 }
 
@@ -46,7 +47,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   apiKey,
   onOpenSettings,
   onApplyScheduleUpdates,
-  onImportSteps,
+  onImportMeals,
   onClose,
 }) => {
   const [tab, setTab] = useState<'evaluate' | 'paste' | 'export'>('evaluate');
@@ -54,6 +55,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   const [menuInput, setMenuInput] = useState(steps.length > 0 ? '' : SAMPLE_MENU_TEXT);
   const [jsonInput, setJsonInput] = useState('');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedSkill, setCopiedSkill] = useState(false);
   const [copiedExport, setCopiedExport] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,11 +90,22 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
     setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
+  const handleCopySkillInstructions = () => {
+    const instructions = buildGeminiSkillInstructions(appliances);
+    navigator.clipboard.writeText(instructions);
+    setCopiedSkill(true);
+    setTimeout(() => setCopiedSkill(false), 2500);
+  };
+
   const handleParsePaste = () => {
     setError(null);
     try {
-      const parsed = parseImportedSteps(jsonInput, appliances);
-      onImportSteps(parsed, effectiveMode);
+      const parsedMeals = parseImportedMeals(
+        jsonInput,
+        appliances,
+        effectiveMode === 'add' ? steps : []
+      );
+      onImportMeals(parsedMeals, effectiveMode);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid JSON');
@@ -121,7 +134,12 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
         appliances,
         effectiveMode === 'add' ? steps : undefined
       );
-      onImportSteps(generated, effectiveMode);
+      const meals = parseImportedMeals(
+        JSON.stringify(generated),
+        appliances,
+        effectiveMode === 'add' ? steps : []
+      );
+      onImportMeals(meals, effectiveMode);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to call Gemini API');
@@ -413,6 +431,49 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
 
           {tab === 'paste' && (
             <>
+              {/* Gemini Skill / Gem Instructions Builder */}
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--accent-sage-soft)',
+                  border: '1px solid var(--border-strong)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
+                      Gemini Skill / Gem Instructions
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--ink-secondary)', marginTop: 2 }}>
+                      Copy these instructions to create a reusable Gemini Gem/Skill with your exact
+                      appliances &amp; ThymeLine meal schema—so you can brainstorm menus, process
+                      photos, or research recipes and export meals ready to paste below.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.78rem' }}
+                    onClick={handleCopySkillInstructions}
+                  >
+                    {copiedSkill ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedSkill ? 'Copied Skill Instructions!' : 'Copy Gemini Skill Instructions'}
+                  </button>
+                </div>
+              </div>
+
               {steps.length > 0 && (
                 <div
                   style={{
@@ -451,8 +512,8 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
               <div className="form-field">
                 <label>
                   {effectiveMode === 'add'
-                    ? `1. Describe new items to add (prompt includes your ${steps.length} existing steps)`
-                    : '1. Describe your full meal menu'}
+                    ? `1. Quick-describe new items to add (prompt includes your ${steps.length} existing steps)`
+                    : '1. Quick-describe your full meal menu'}
                 </label>
                 <textarea
                   rows={2}
@@ -489,14 +550,14 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
               <div className="form-field">
                 <label>
                   {effectiveMode === 'add'
-                    ? '2. Or paste JSON from Gemini (adds to current steps & re-evaluates schedule)'
-                    : '2. Or paste JSON from Gemini (replaces current steps)'}
+                    ? '2. Paste Meal JSON (single dish or array of dishes) or Step JSON from Gemini'
+                    : '2. Paste Meal JSON (single dish or array of dishes) or Step JSON from Gemini'}
                 </label>
                 <textarea
                   rows={6}
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
-                  placeholder='[{"id": "garlic-bread", "title": "Bake Garlic Bread", ...}]'
+                  placeholder='[{"name": "Hot Apple Cider", "course": "Beverage", "ingredients": [...], "steps": [...]}]'
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
               </div>
@@ -557,7 +618,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                 onClick={handleParsePaste}
                 disabled={!jsonInput.trim()}
               >
-                {effectiveMode === 'add' ? 'Add Steps to Schedule' : 'Import Steps'}
+                {effectiveMode === 'add' ? 'Import Meals to Schedule' : 'Import Meals'}
               </button>
             )}
           </div>

@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.8.0] — 2026-11-23
+
+### Added
+- **Meal-Level Gemini Import (`parseImportedMeals` in `gemini.ts`, `GeminiModal.tsx`, `App.tsx`)**: The Gemini **Import / Add Items** tab now accepts full `MealItem` JSON (single dish, array of dishes, or `{ meals: [...] }`) as well as legacy `MealStep[]` arrays—preserving course, servings, ingredients, recipe instructions, raw notes, prep-ahead notes, finish constraints, `requiresTimer`, `canPrepEarly`, and `relativeDeps`.
+- **Save Imported Meals to Library**: Imported meals are added as full `MealItem` entries in the active event, so editing any imported meal lets you save it directly to the **Meal Library** via **Save to Library**.
+- **Copy Gemini Skill / Gem Instructions (`buildGeminiSkillInstructions`)**: Added a **Copy Gemini Skill Instructions** button in `GeminiModal`'s Import tab that copies a complete, ready-to-use Gemini Gem/Skill prompt containing your current kitchen appliances, auto-balance categories, and the ThymeLine `MealItem` JSON schema.
+
+---
+
 ## [2.7.1] — 2026-11-23
 
 ### Fixed & Improved
