@@ -6,7 +6,7 @@ import { pullCloudWorkspace, pushCloudWorkspace } from '../sync';
 interface SyncModalProps {
   workspace: ThymeLineWorkspace;
   passcode: string;
-  onSavePasscode: (passcode: string) => void;
+  onOpenSettings: () => void;
   onApplyRemoteWorkspace: (remote: ThymeLineWorkspace) => void;
   onMarkSynced: (syncVersion: number, updatedAt: number) => void;
   onClose: () => void;
@@ -15,12 +15,11 @@ interface SyncModalProps {
 export const SyncModal: React.FC<SyncModalProps> = ({
   workspace,
   passcode,
-  onSavePasscode,
+  onOpenSettings,
   onApplyRemoteWorkspace,
   onMarkSynced,
   onClose,
 }) => {
-  const [localPasscode, setLocalPasscode] = useState(passcode);
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,14 +29,13 @@ export const SyncModal: React.FC<SyncModalProps> = ({
     setError(null);
     setStatusMsg(null);
     setConflictRemote(null);
-    if (!localPasscode.trim()) {
-      setError('Enter your family sync passcode first.');
+    if (!passcode.trim()) {
+      setError('Configure your family sync passcode in Settings first.');
       return;
     }
-    onSavePasscode(localPasscode.trim());
     setLoading(true);
     try {
-      const res = await pullCloudWorkspace(localPasscode);
+      const res = await pullCloudWorkspace(passcode);
       if (!res.exists || !res.workspace) {
         setStatusMsg('No cloud backup exists yet. Click "Save to Cloud" to create one.');
         return;
@@ -61,14 +59,13 @@ export const SyncModal: React.FC<SyncModalProps> = ({
     setError(null);
     setStatusMsg(null);
     setConflictRemote(null);
-    if (!localPasscode.trim()) {
-      setError('Enter your family sync passcode first.');
+    if (!passcode.trim()) {
+      setError('Configure your family sync passcode in Settings first.');
       return;
     }
-    onSavePasscode(localPasscode.trim());
     setLoading(true);
     try {
-      const res = await pushCloudWorkspace(localPasscode, workspace, force);
+      const res = await pushCloudWorkspace(passcode, workspace, force);
       if (res.conflict && res.remoteWorkspace) {
         setConflictRemote(res.remoteWorkspace);
         setError(
@@ -125,16 +122,35 @@ export const SyncModal: React.FC<SyncModalProps> = ({
             </span>
           </div>
 
-          <div className="form-field">
-            <label htmlFor="sync-passcode">Shared Family Sync Passcode</label>
-            <input
-              id="sync-passcode"
-              type="password"
-              value={localPasscode}
-              onChange={(e) => setLocalPasscode(e.target.value)}
-              placeholder="Matches SYNC_PASSCODE in Cloudflare Pages"
-            />
-          </div>
+          {!passcode.trim() && (
+            <div
+              style={{
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--status-amber-soft)',
+                border: '1px solid var(--status-amber)',
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>No family sync passcode configured yet.</span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                onClick={() => {
+                  onClose();
+                  onOpenSettings();
+                }}
+              >
+                Open Settings
+              </button>
+            </div>
+          )}
 
           {error && (
             <div

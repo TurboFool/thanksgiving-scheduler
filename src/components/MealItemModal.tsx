@@ -27,7 +27,7 @@ interface MealItemModalProps {
   otherItems: MealItem[];
   allEventSteps: MealStep[];
   apiKey: string;
-  onSaveApiKey: (key: string) => void;
+  onOpenSettings: () => void;
   onSave: (item: MealItem) => void;
   onDelete?: (itemId: string) => void;
   onSaveToLibrary: (item: MealItem) => void;
@@ -51,7 +51,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   appliances,
   otherItems,
   apiKey,
-  onSaveApiKey,
+  onOpenSettings,
   onSave,
   onDelete,
   onSaveToLibrary,
@@ -85,7 +85,6 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
     item?.manualChangeLog ?? []
   );
 
-  const [localKey, setLocalKey] = useState(apiKey);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [savedToLibMsg, setSavedToLibMsg] = useState(false);
@@ -171,19 +170,18 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
 
   const handleProcessWithAI = async () => {
     setAiError(null);
-    if (!localKey.trim()) {
-      setAiError('Enter your Gemini API key below (or in Gemini / Import) to process this item.');
+    if (!apiKey.trim()) {
+      setAiError('Configure your Gemini API key in Settings first.');
       return;
     }
     if (!name.trim() && !rawNotes.trim()) {
       setAiError('Enter a dish name or raw notes first.');
       return;
     }
-    onSaveApiKey(localKey.trim());
     setAiLoading(true);
     try {
       const draft = buildCurrentItem();
-      const result = await processMealItemWithGemini(localKey, draft, appliances, otherItems);
+      const result = await processMealItemWithGemini(apiKey, draft, appliances, otherItems);
       setConvertedNotes(result.convertedNotes);
       if (result.prepAheadNotes) setPrepAheadNotes(result.prepAheadNotes);
       setSteps(result.steps);
@@ -409,15 +407,26 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                     flexWrap: 'wrap',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 200 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem' }}>
                     <Sparkles size={15} color="var(--accent-sage)" />
-                    <input
-                      type="password"
-                      value={localKey}
-                      onChange={(e) => setLocalKey(e.target.value)}
-                      placeholder="Gemini API key (AIza...)"
-                      style={{ flex: 1, fontSize: '0.78rem', padding: '5px 8px' }}
-                    />
+                    {apiKey.trim() ? (
+                      <span>Use Gemini AI to sanitize notes and generate cooking steps.</span>
+                    ) : (
+                      <span>
+                        No Gemini API key configured.{' '}
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          style={{ padding: '2px 6px', fontSize: '0.78rem', textDecoration: 'underline' }}
+                          onClick={() => {
+                            onClose();
+                            onOpenSettings();
+                          }}
+                        >
+                          Open Settings
+                        </button>
+                      </span>
+                    )}
                   </div>
                   <button
                     type="button"

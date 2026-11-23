@@ -15,7 +15,7 @@ interface GeminiModalProps {
   targetDinnerMin: number;
   projectedDinnerMin: number;
   apiKey: string;
-  onSaveApiKey: (key: string) => void;
+  onOpenSettings: () => void;
   onImportSteps: (steps: MealStep[], mode: 'add' | 'replace') => void;
   onClose: () => void;
 }
@@ -30,7 +30,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   targetDinnerMin,
   projectedDinnerMin,
   apiKey,
-  onSaveApiKey,
+  onOpenSettings,
   onImportSteps,
   onClose,
 }) => {
@@ -43,7 +43,6 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [advice, setAdvice] = useState<string | null>(null);
-  const [localKey, setLocalKey] = useState(apiKey);
 
   const effectiveMode = steps.length === 0 ? 'replace' : mode;
 
@@ -80,8 +79,8 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
 
   const handleApiGenerate = async () => {
     setError(null);
-    if (!localKey.trim()) {
-      setError('Please enter your Gemini API key first.');
+    if (!apiKey.trim()) {
+      setError('Please configure your Gemini API key in Settings first.');
       return;
     }
     if (!menuInput.trim()) {
@@ -92,11 +91,10 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
       );
       return;
     }
-    onSaveApiKey(localKey.trim());
     setLoading(true);
     try {
       const generated = await generateScheduleWithGemini(
-        localKey,
+        apiKey,
         menuInput,
         appliances,
         effectiveMode === 'add' ? steps : undefined
@@ -112,15 +110,14 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
 
   const handleGetAdvice = async () => {
     setError(null);
-    if (!localKey.trim()) {
-      setError('Please enter your Gemini API key first.');
+    if (!apiKey.trim()) {
+      setError('Please configure your Gemini API key in Settings first.');
       return;
     }
-    onSaveApiKey(localKey.trim());
     setLoading(true);
     try {
       const text = await getRecoveryAdviceWithGemini(
-        localKey,
+        apiKey,
         scheduledSteps,
         appliances,
         targetDinnerMin,
@@ -292,15 +289,35 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
 
           {tab === 'api' && (
             <>
-              <div className="form-field">
-                <label>Gemini API Key (saved only in your browser localStorage)</label>
-                <input
-                  type="password"
-                  value={localKey}
-                  onChange={(e) => setLocalKey(e.target.value)}
-                  placeholder="AIza..."
-                />
-              </div>
+              {!apiKey.trim() && (
+                <div
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--status-amber-soft)',
+                    border: '1px solid var(--status-amber)',
+                    fontSize: '0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span>No Gemini API key configured yet.</span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                    onClick={() => {
+                      onClose();
+                      onOpenSettings();
+                    }}
+                  >
+                    Open Settings
+                  </button>
+                </div>
+              )}
 
               <div className="form-field">
                 <label>

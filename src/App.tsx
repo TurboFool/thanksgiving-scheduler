@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
-  BellOff,
   BookOpen,
   Calendar,
   Check,
@@ -15,6 +14,7 @@ import {
   RefreshCw,
   RotateCcw,
   Settings,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Undo2,
@@ -52,6 +52,7 @@ import { MealLibraryModal } from './components/MealLibraryModal';
 import { ApplianceModal } from './components/ApplianceModal';
 import { GeminiModal } from './components/GeminiModal';
 import { SyncModal } from './components/SyncModal';
+import { SettingsModal } from './components/SettingsModal';
 
 function getRealNowMin(): number {
   const d = new Date();
@@ -104,6 +105,7 @@ export function App() {
   const [showGeminiModal, setShowGeminiModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [mutedAlarms, setMutedAlarms] = useState<Set<string>>(new Set());
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [scanAiAdvice, setScanAiAdvice] = useState<string | null>(null);
@@ -863,10 +865,29 @@ export function App() {
               title="Toggle between live computer clock and simulated test clock"
             >
               <Clock size={13} />
-              {settings.useSimulatedClock ? `Sim: ${formatTimeMin(nowMin)}` : `Live: ${formatTimeMin(nowMin)}`}
+              {settings.useSimulatedClock ? 'Sim' : `Live: ${formatTimeMin(nowMin)}`}
             </button>
             {settings.useSimulatedClock && (
-              <div style={{ display: 'flex', gap: 3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <input
+                  type="time"
+                  aria-label="Simulated current time"
+                  value={minToTimeInput(activeEvent.simulatedNowMin)}
+                  onChange={(e) => {
+                    const nextMin = timeInputToMin(e.target.value);
+                    updateActiveEvent((ev) => ({ ...ev, simulatedNowMin: nextMin }));
+                  }}
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.76rem',
+                    fontWeight: 600,
+                    padding: '3px 6px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-strong)',
+                    background: 'var(--bg-surface)',
+                    color: 'var(--ink-primary)',
+                  }}
+                />
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -898,42 +919,9 @@ export function App() {
               soundManager.unlock();
               setSettings((s) => ({ ...s, soundEnabled: !s.soundEnabled }));
             }}
-            title={settings.soundEnabled ? 'Alarms On' : 'Alarms Muted'}
+            title={settings.soundEnabled ? 'Alarms On (click to mute)' : 'Alarms Muted (click to unmute)'}
           >
             {settings.soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-          </button>
-
-          <button
-            type="button"
-            className={`btn-icon ${settings.voiceEnabled ? 'active' : ''}`}
-            onClick={() => setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled }))}
-            title={settings.voiceEnabled ? 'Voice Announcements On' : 'Voice Announcements Off'}
-          >
-            {settings.voiceEnabled ? <Bell size={16} /> : <BellOff size={16} />}
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => {
-              soundManager.unlock();
-              soundManager.playAlarmBell();
-            }}
-            title="Test audible alarm bell"
-          >
-            Test Bell
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => {
-              soundManager.unlock();
-              soundManager.speak('ThymeLine voice notifications are ready for the kitchen.');
-            }}
-            title="Test spoken voice notification"
-          >
-            Test Voice
           </button>
 
           {undoStack.length > 0 && (
@@ -970,7 +958,7 @@ export function App() {
             className="btn btn-secondary"
             onClick={() => setShowApplianceModal(true)}
           >
-            <Settings size={14} /> Appliances
+            <SlidersHorizontal size={14} /> Appliances
           </button>
 
           <button
@@ -979,6 +967,15 @@ export function App() {
             onClick={() => setShowGeminiModal(true)}
           >
             <Sparkles size={14} color="var(--accent-sage)" /> Gemini
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setShowSettingsModal(true)}
+            title="API Key, Sync Passcode, Audio/Voice Tests & Clock Settings"
+          >
+            <Settings size={14} /> Settings
           </button>
 
           <button
@@ -1537,7 +1534,7 @@ export function App() {
           )}
           allEventSteps={steps}
           apiKey={settings.geminiApiKey}
-          onSaveApiKey={(key) => setSettings((s) => ({ ...s, geminiApiKey: key }))}
+          onOpenSettings={() => setShowSettingsModal(true)}
           onSave={handleSaveMealItem}
           onDelete={handleDeleteMealItem}
           onSaveToLibrary={handleSaveToLibrary}
@@ -1593,7 +1590,7 @@ export function App() {
           targetDinnerMin={targetDinnerMin}
           projectedDinnerMin={schedule.projectedDinnerMin}
           apiKey={settings.geminiApiKey}
-          onSaveApiKey={(key) => setSettings((s) => ({ ...s, geminiApiKey: key }))}
+          onOpenSettings={() => setShowSettingsModal(true)}
           onImportSteps={(imported, mode) => {
             const newItems = stepsToMealItems(imported);
             if (mode === 'add') {
@@ -1621,7 +1618,7 @@ export function App() {
         <SyncModal
           workspace={workspace}
           passcode={settings.syncPasscode}
-          onSavePasscode={(code) => setSettings((s) => ({ ...s, syncPasscode: code }))}
+          onOpenSettings={() => setShowSettingsModal(true)}
           onApplyRemoteWorkspace={(remote) => {
             setWorkspace(remote);
             setSelectedStepId(null);
@@ -1631,6 +1628,20 @@ export function App() {
             setWorkspace((prev) => ({ ...prev, syncVersion, updatedAt }))
           }
           onClose={() => setShowSyncModal(false)}
+        />
+      )}
+
+      {showSettingsModal && (
+        <SettingsModal
+          settings={settings}
+          simulatedNowMin={activeEvent.simulatedNowMin}
+          onSave={(nextSettings, nextSimMin) => {
+            setSettings(nextSettings);
+            if (typeof nextSimMin === 'number') {
+              updateActiveEvent((ev) => ({ ...ev, simulatedNowMin: nextSimMin }));
+            }
+          }}
+          onClose={() => setShowSettingsModal(false)}
         />
       )}
     </div>
