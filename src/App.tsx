@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Settings,
   Sparkles,
+  Trash2,
   Undo2,
   Utensils,
   Volume2,
@@ -27,6 +28,16 @@ import { ApplianceModal } from './components/ApplianceModal';
 import { GeminiModal } from './components/GeminiModal';
 
 const STORAGE_KEY = 'harvestline_state_v1';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  targetDinnerMin: 17 * 60, // 5:00 PM
+  soundEnabled: true,
+  voiceEnabled: false,
+  warningAt5Min: true,
+  useSimulatedClock: true,
+  simulatedNowMin: 12 * 60 + 30, // 12:30 PM default sim so Thanksgiving timeline is visible immediately
+  geminiApiKey: '',
+};
 
 function getRealNowMin(): number {
   const d = new Date();
@@ -53,7 +64,14 @@ export function App() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed.steps) && Array.isArray(parsed.appliances)) {
-          return parsed;
+          return {
+            appliances: parsed.appliances as Appliance[],
+            steps: parsed.steps as MealStep[],
+            settings: {
+              ...DEFAULT_SETTINGS,
+              ...(parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {}),
+            },
+          };
         }
       }
     } catch {
@@ -69,15 +87,7 @@ export function App() {
   );
   const [steps, setSteps] = useState<MealStep[]>(initial?.steps ?? DEFAULT_STEPS);
   const [settings, setSettings] = useState<AppSettings>(
-    initial?.settings ?? {
-      targetDinnerMin: 17 * 60, // 5:00 PM
-      soundEnabled: true,
-      voiceEnabled: false,
-      warningAt5Min: true,
-      useSimulatedClock: true,
-      simulatedNowMin: 12 * 60 + 30, // 12:30 PM default sim so Thanksgiving timeline is visible immediately
-      geminiApiKey: '',
-    }
+    initial?.settings ?? DEFAULT_SETTINGS
   );
 
   const [realNowMin, setRealNowMin] = useState<number>(getRealNowMin);
@@ -315,6 +325,14 @@ export function App() {
     setSettings((s) => ({ ...s, targetDinnerMin: 17 * 60, simulatedNowMin: 12 * 60 + 30 }));
   };
 
+  const handleClearAllSteps = () => {
+    if (steps.length === 0) return;
+    pushUndo('Clear all steps');
+    setSteps([]);
+    setSelectedStepId(null);
+    setMutedAlarms(new Set());
+  };
+
   // Partition steps for Kitchen Mode panel
   const activeSteps = useMemo(
     () =>
@@ -514,15 +532,28 @@ export function App() {
             <span className="panel-title">
               <Bell size={15} /> Kitchen Mode
             </span>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ fontSize: '0.74rem', padding: '3px 7px' }}
-              onClick={handleResetDemo}
-              title="Reset to sample Thanksgiving menu"
-            >
-              <RotateCcw size={12} /> Reset Sample
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {steps.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: '0.74rem', padding: '3px 7px', color: 'var(--status-crimson)' }}
+                  onClick={handleClearAllSteps}
+                  title="Remove all steps to start fresh (can be undone)"
+                >
+                  <Trash2 size={12} /> Clear All
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ fontSize: '0.74rem', padding: '3px 7px' }}
+                onClick={handleResetDemo}
+                title="Reset to sample Thanksgiving menu"
+              >
+                <RotateCcw size={12} /> Reset Sample
+              </button>
+            </div>
           </div>
 
           <div className="kitchen-scroll">
