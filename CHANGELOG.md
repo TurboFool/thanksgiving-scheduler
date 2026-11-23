@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.7.0] — 2026-11-23
+
+### Added
+- **External Callout Labels for Short-Duration Gantt Bars (`GanttTimeline.tsx`, `index.css`)**: Bars narrower than `110px` now display an adjacent clickable callout pill with the full step title and duration (positioned to the right, or left near the timeline edge) so 2m–5m steps are always readable and interactive even when zoomed out.
+- **Crunch-Time Zoom Presets (`15m`, `30m`, `1h`, `Fit`) & Deeper Zoom**: Raised max zoom to `60 px/min` with dynamic `5m`/`10m`/`15m`/`30m`/`60m` axis ticks, allowing a 15-minute or 30-minute crunch-time window around `Now` to fill the visible timeline.
+- **Optional Non-Disruptive `Auto` Zoom**: Added an **Auto** zoom toggle that steps down to closer windows as dinner approaches and older steps are started/completed, with a 90s cooldown and an automatic 15s pause whenever you scroll, wheel, or interact with the timeline.
+
+---
+
 ## [2.6.4] — 2026-11-23
 
 ### Fixed

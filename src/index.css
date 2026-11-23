@@ -744,6 +744,52 @@ textarea {
   margin-top: 2px;
 }
 
+.gantt-task.is-narrow {
+  overflow: visible;
+}
+
+.gantt-task.is-narrow .task-bar-title,
+.gantt-task.is-narrow .task-bar-sub {
+  opacity: 0;
+}
+
+.gantt-task.is-narrow:hover .task-bar-title,
+.gantt-task.is-narrow:hover .task-bar-sub {
+  opacity: 1;
+}
+
+.gantt-task-callout {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 3px 7px;
+  box-shadow: var(--shadow-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  max-width: 220px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-primary);
+  z-index: 6;
+}
+
+.gantt-task-callout.align-right {
+  left: calc(100% + 5px);
+}
+
+.gantt-task-callout.align-left {
+  right: calc(100% + 5px);
+}
+
+.gantt-task:hover .gantt-task-callout {
+  display: none;
+}
+
 /* Playhead & Dinner Line */
 .playhead-line {
   position: absolute;

@@ -38,6 +38,17 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   onReorderAppliances,
 }) => {
   const [pxPerMin, setPxPerMin] = useState(4.6);
+  const [autoZoom, setAutoZoom] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(900);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastInteractionAtRef = useRef<number>(0);
+  const lastAutoZoomAtRef = useRef<number>(0);
+  const lastAutoStateRef = useRef<{ tier: string; doneCount: number; runningCount: number }>({
+    tier: '',
+    doneCount: -1,
+    runningCount: -1,
+  });
+
   const [dragLaneIdx, setDragLaneIdx] = useState<number | null>(null);
   const [overLaneIdx, setOverLaneIdx] = useState<number | null>(null);
   const [dragStep, setDragStep] = useState<{
@@ -54,12 +65,25 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   const suppressClickRef = useRef(false);
 
   useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      if (el.clientWidth > 0) setViewportWidth(el.clientWidth);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
     const handlePointerMove = (e: PointerEvent) => {
       const origin = dragOriginRef.current;
       if (!origin) return;
       const dx = e.clientX - origin.startX;
       if (!origin.moved && Math.abs(dx) < 6) return;
       origin.moved = true;
+      lastInteractionAtRef.current = Date.now();
       const deltaMin = Math.round(dx / pxPerMin / 5) * 5;
       const nextStart = Math.max(0, Math.min(23 * 60 + 45, origin.origStartMin + deltaMin));
       setDragStep({
@@ -95,7 +119,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
     };
   }, [pxPerMin, onMoveStep]);
 
-  // Timeline bounds: pad 30m before earliest/now and 30m after projected/target dinner
+  // Timeline bounds: pad 20m before earliest/now and 30m after projected/target dinner
   const startBound = useMemo(() => {
     const raw = Math.min(earliestStartMin, nowMin) - 20;
     return Math.floor(raw / 30) * 30;
@@ -107,10 +131,88 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   }, [projectedDinnerMin, targetDinnerMin, nowMin]);
 
   const totalMin = Math.max(60, endBound - startBound);
+  const availTrackWidth = Math.max(320, viewportWidth - 195);
+
+  const zoomToWindow = (windowMin: number, focusMin = nowMin) => {
+    const nextPx = Math.min(60, Math.max(1.2, availTrackWidth / Math.max(15, windowMin)));
+    setPxPerMin(nextPx);
+    window.requestAnimationFrame(() => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const targetX = Math.max(0, (focusMin - startBound) * nextPx - availTrackWidth * 0.22);
+      el.scrollTo({ left: targetX, behavior: 'smooth' });
+    });
+  };
+
+  // Infrequent, non-disruptive Auto-Zoom as dinner approaches & steps complete/start
+  useEffect(() => {
+    if (!autoZoom || dragStep) return;
+    const nowMs = Date.now();
+    // Pause auto-zoom for 15s after any user scroll/pointer/wheel interaction
+    if (nowMs - lastInteractionAtRef.current < 15_000) return;
+
+    const doneCount = steps.filter((s) => s.status === 'done').length;
+    const runningCount = steps.filter((s) => s.status === 'running').length;
+    const activeOrPending = steps.filter((s) => s.status !== 'done');
+    const maxEnd = activeOrPending.reduce(
+      (acc, s) => Math.max(acc, s.endMin),
+      Math.max(targetDinnerMin, projectedDinnerMin)
+    );
+    const remainingMin = Math.max(15, maxEnd - nowMin);
+
+    let tier = 'fit';
+    let targetWindow = totalMin;
+    if (remainingMin <= 25) {
+      tier = '15m';
+      targetWindow = 18;
+    } else if (remainingMin <= 50) {
+      tier = '30m';
+      targetWindow = 35;
+    } else if (remainingMin <= 105) {
+      tier = '60m';
+      targetWindow = 75;
+    } else if (remainingMin <= 180) {
+      tier = '120m';
+      targetWindow = 140;
+    }
+
+    const prev = lastAutoStateRef.current;
+    const completionChanged = doneCount !== prev.doneCount || runningCount !== prev.runningCount;
+    const tierChanged = tier !== prev.tier;
+    const cooldownElapsed = nowMs - lastAutoZoomAtRef.current >= 90_000;
+
+    if (!tierChanged && !completionChanged) return;
+    if (!completionChanged && !cooldownElapsed && prev.tier !== '') return;
+
+    lastAutoStateRef.current = { tier, doneCount, runningCount };
+    lastAutoZoomAtRef.current = nowMs;
+
+    const nextPx = Math.min(60, Math.max(1.2, availTrackWidth / Math.max(15, targetWindow)));
+    setPxPerMin(nextPx);
+    window.requestAnimationFrame(() => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const focus = tier === 'fit' ? startBound : nowMin;
+      const targetX = Math.max(0, (focus - startBound) * nextPx - availTrackWidth * 0.2);
+      el.scrollTo({ left: targetX, behavior: 'smooth' });
+    });
+  }, [
+    autoZoom,
+    dragStep,
+    steps,
+    nowMin,
+    targetDinnerMin,
+    projectedDinnerMin,
+    totalMin,
+    availTrackWidth,
+    startBound,
+  ]);
+
   const trackWidth = Math.max(700, totalMin * pxPerMin);
 
-  // Tick marks every 30 min (or 60 min when zoomed out)
-  const tickStep = pxPerMin < 2.2 ? 60 : 30;
+  // Tick marks adapt cleanly from 60m (zoomed out) down to 5m (15m crunch-time view)
+  const tickStep =
+    pxPerMin >= 30 ? 5 : pxPerMin >= 15 ? 10 : pxPerMin >= 8 ? 15 : pxPerMin >= 2.2 ? 30 : 60;
   const ticks = useMemo(() => {
     const arr: number[] = [];
     for (let t = startBound; t <= endBound; t += tickStep) {
@@ -185,15 +287,66 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
         <div className="panel-title">
           <Clock size={15} /> Appliance Timeline &amp; Dependencies
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
-            Click any block to edit dependencies, racks, or temp
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.74rem', color: 'var(--ink-muted)' }}>
+            Click block to edit · Drag pending to reschedule
           </span>
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '3px 7px', fontSize: '0.72rem' }}
+              onClick={() => {
+                setAutoZoom(false);
+                zoomToWindow(15);
+              }}
+              title="Zoom in to a 15-minute crunch-time window around Now"
+            >
+              15m
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '3px 7px', fontSize: '0.72rem' }}
+              onClick={() => {
+                setAutoZoom(false);
+                zoomToWindow(30);
+              }}
+              title="Zoom in to a 30-minute window around Now"
+            >
+              30m
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '3px 7px', fontSize: '0.72rem' }}
+              onClick={() => {
+                setAutoZoom(false);
+                zoomToWindow(60);
+              }}
+              title="Zoom to a 1-hour window around Now"
+            >
+              1h
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '3px 7px', fontSize: '0.72rem' }}
+              onClick={() => {
+                setAutoZoom(false);
+                zoomToWindow(totalMin, startBound);
+              }}
+              title="Fit entire schedule"
+            >
+              Fit
+            </button>
             <button
               type="button"
               className="btn-icon"
-              onClick={() => setPxPerMin((p) => Math.max(1.5, p - 0.8))}
+              onClick={() => {
+                setAutoZoom(false);
+                setPxPerMin((p) => Math.max(1.2, Number((p * 0.75).toFixed(2))));
+              }}
               title="Zoom out"
             >
               <ZoomOut size={15} />
@@ -201,16 +354,44 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
             <button
               type="button"
               className="btn-icon"
-              onClick={() => setPxPerMin((p) => Math.min(12, p + 0.8))}
+              onClick={() => {
+                setAutoZoom(false);
+                setPxPerMin((p) => Math.min(60, Number((p * 1.35).toFixed(2))));
+              }}
               title="Zoom in"
             >
               <ZoomIn size={15} />
+            </button>
+            <button
+              type="button"
+              className={`btn ${autoZoom ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: 2 }}
+              onClick={() => {
+                lastAutoStateRef.current = { tier: '', doneCount: -1, runningCount: -1 };
+                lastInteractionAtRef.current = 0;
+                setAutoZoom((a) => !a);
+              }}
+              title="Automatically zoom in as dinner approaches and older steps complete (pauses for 15s whenever you scroll or interact)"
+            >
+              Auto
             </button>
           </div>
         </div>
       </div>
 
-      <div className="timeline-scroll">
+      <div
+        className="timeline-scroll"
+        ref={scrollContainerRef}
+        onScroll={() => {
+          lastInteractionAtRef.current = Date.now();
+        }}
+        onWheel={() => {
+          lastInteractionAtRef.current = Date.now();
+        }}
+        onPointerDown={() => {
+          lastInteractionAtRef.current = Date.now();
+        }}
+      >
         <div className="gantt-container" style={{ width: 185 + trackWidth }}>
           {/* Sticky Header */}
           <div className="gantt-header">
@@ -391,11 +572,15 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                         ? (dragStep.previewStartMin - startBound) * pxPerMin
                         : rect.x;
                       const canDrag = s.status === 'pending' && Boolean(onMoveStep);
+                      const isNarrow = rect.w < 110;
+                      const calloutLeft = displayX + rect.w > trackWidth - 180;
 
                       return (
                         <div
                           key={s.id}
-                          className={`gantt-task ${statusClass} ${isSelected ? 'selected' : ''}`}
+                          className={`gantt-task ${statusClass} ${isSelected ? 'selected' : ''} ${
+                            isNarrow ? 'is-narrow' : ''
+                          }`}
                           style={{
                             left: displayX,
                             top: rect.y - meta.top,
@@ -427,6 +612,29 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                               : ''
                           }`}
                         >
+                          {isNarrow && !isDraggingThis && (
+                            <div
+                              className={`gantt-task-callout ${
+                                calloutLeft ? 'align-left' : 'align-right'
+                              }`}
+                              style={{ borderLeft: `3px solid ${app.color}` }}
+                            >
+                              <span
+                                style={{
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {s.title}
+                              </span>
+                              <span
+                                className="mono"
+                                style={{ fontSize: '0.66rem', color: 'var(--ink-muted)', flexShrink: 0 }}
+                              >
+                                {formatDuration(s.endMin - s.startMin)}
+                              </span>
+                            </div>
+                          )}
                           {isDraggingThis && (
                             <div
                               style={{
