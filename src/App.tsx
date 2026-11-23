@@ -7,6 +7,7 @@ import {
   Clock,
   Cloud,
   Edit3,
+  FileText,
   Flame,
   Pause,
   Play,
@@ -56,6 +57,7 @@ import { ApplianceModal } from './components/ApplianceModal';
 import { GeminiModal } from './components/GeminiModal';
 import { SyncModal } from './components/SyncModal';
 import { SettingsModal } from './components/SettingsModal';
+import { PrintPlanModal } from './components/PrintPlanModal';
 
 function getRealNowMin(): number {
   const d = new Date();
@@ -115,6 +117,7 @@ export function App() {
   const [showLibraryModal, setShowLibraryModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showPrintPlanModal, setShowPrintPlanModal] = useState(false);
   const [mutedAlarms, setMutedAlarms] = useState<Set<string>>(new Set());
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [scanAiAdvice, setScanAiAdvice] = useState<string | null>(null);
@@ -1247,6 +1250,15 @@ export function App() {
           <button
             type="button"
             className="btn btn-secondary"
+            onClick={() => setShowPrintPlanModal(true)}
+            title="View, copy, pop out, or print a clean text plan (chronological or per-dish)"
+          >
+            <FileText size={14} /> Plan Sheet
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
             onClick={() => setShowApplianceModal(true)}
           >
             <SlidersHorizontal size={14} /> Appliances
@@ -2297,6 +2309,15 @@ export function App() {
             showToast('Saved settings');
           }}
           onClose={() => setShowSettingsModal(false)}
+        />
+      )}
+
+      {showPrintPlanModal && (
+        <PrintPlanModal
+          event={activeEvent}
+          scheduledSteps={schedule.steps}
+          appliances={appliances}
+          onClose={() => setShowPrintPlanModal(false)}
         />
       )}
 

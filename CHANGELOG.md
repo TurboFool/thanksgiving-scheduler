@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.9.0] — 2026-11-23
+
+### Added
+- **Kitchen Plan Sheet (`Plan Sheet` button, `PrintPlanModal.tsx`, `planFormatter.ts`)**: Added a clean printable & copyable text view supporting **Chronological Timeline**, **Per-Dish Recipes & Steps**, and **Both Combined** modes, with toggles for **Checkboxes (`[ ]`)**, **Recipes, Ingredients & Notes** (with scaled quantities), and **Include Completed Steps**. Includes **Copy Plain Text**, **Pop-Out Window** (dedicated browser window with Copy & Print controls), and direct **Print** actions.
+
+---
+
 ## [2.8.0] — 2026-11-23
 
 ### Added
