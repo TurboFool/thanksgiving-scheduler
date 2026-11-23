@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.6.4] — 2026-11-23
+
+### Fixed
+- **Library Import & Merge ID Remapping for `relativeDeps` (`workspace.ts`, `gemini.ts`, `App.tsx`)**: Fixed `cloneItemForEvent` and `mergeImportedSteps` so `relativeDeps[].stepId` is remapped alongside `dependencies` and `readyBeforeIds` when importing a dish from the Meal Library into an Event. Previously, `relativeDeps[].stepId` still pointed to the old Library step ID, causing the scheduler to ignore the relative link and `StepModal` to display the first step in the dropdown. Also cleaned up `relativeDeps` references when deleting a step.
+
+---
+
 ## [2.6.3] — 2026-11-23
 
 ### Fixed

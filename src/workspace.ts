@@ -120,6 +120,10 @@ export function cloneItemForEvent(item: MealItem): MealItem {
     dish: item.name,
     dependencies: s.dependencies.map((d) => idMap.get(d) ?? d),
     readyBeforeIds: s.readyBeforeIds.map((d) => idMap.get(d) ?? d),
+    relativeDeps: s.relativeDeps?.map((r) => ({
+      ...r,
+      stepId: idMap.get(r.stepId) ?? r.stepId,
+    })),
     status: 'pending',
     remainingSec: s.durationMin * 60,
     addedMin: 0,

@@ -239,6 +239,10 @@ export function mergeImportedSteps(
     id: idRemap.get(step.id) ?? step.id,
     dependencies: step.dependencies.map((d) => idRemap.get(d) ?? d),
     readyBeforeIds: step.readyBeforeIds.map((d) => idRemap.get(d) ?? d),
+    relativeDeps: step.relativeDeps?.map((r) => ({
+      ...r,
+      stepId: idRemap.get(r.stepId) ?? r.stepId,
+    })),
   }));
 
   return [...existing, ...normalizedIncoming];

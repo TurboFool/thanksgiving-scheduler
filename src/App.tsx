@@ -581,6 +581,7 @@ export function App() {
               ...s,
               dependencies: s.dependencies.filter((d) => d !== id),
               readyBeforeIds: s.readyBeforeIds.filter((d) => d !== id),
+              relativeDeps: s.relativeDeps?.filter((r) => r.stepId !== id),
             }));
           const nextLog =
             hadStep && it.aiProcessedAt && removedStep
