@@ -74,14 +74,29 @@ thanksgiving-scheduler/
 - **Comments & Docs**:
   - Preserve existing docstrings and comments unrelated to your changes.
   - Update `PROJECT_OVERVIEW.md` if you change core data models, scheduling behavior, or add new modules.
+  - Record user-facing changes in `CHANGELOG.md` under the corresponding SemVer release.
 
 ---
 
-## 5. Verification Before Finishing
+## 5. Versioning & Release Standards
+
+- **Single Source of Truth**: The application version lives in `package.json` (`"version"`) and is injected into the client bundle at build time as `__APP_VERSION__` via `vite.config.ts` (declared in `src/vite-env.d.ts`) and displayed in `SettingsModal.tsx`.
+- **Semantic Versioning (`MAJOR.MINOR.PATCH`)**:
+  - **`MAJOR`**: Breaking data-model changes, full rebrands, or major architectural overhauls.
+  - **`MINOR`**: New backwards-compatible features (e.g., new modals, scheduler capabilities, sync features, AI tools).
+  - **`PATCH`**: Bug fixes, CSS/UI polish, documentation updates, or dependency/model string updates.
+- **Release Checklist**:
+  1. Bump `"version"` in `package.json` before pushing a release commit.
+  2. Add a dated entry to `CHANGELOG.md` summarizing changes.
+
+---
+
+## 6. Verification Before Finishing
 
 Before reporting work complete or pushing to `origin`:
 1. Run `npm run build` (`tsc -b && vite build`) and ensure it exits with code `0`.
-2. If you modified UI or scheduling logic, verify in the running dev server (`npm run dev`) that:
-   - Modals scroll properly on smaller viewports.
+2. Run `npm run lint` (`oxlint`) and ensure 0 warnings and 0 errors.
+3. If you modified UI or scheduling logic, verify in the running dev server (`npm run dev`) that:
+   - Modals scroll properly on smaller viewports and do not accidentally dismiss on backdrop click.
    - Extending a running timer (`+5m` / `+10m`) or letting it hit `00:00` cascades downstream steps and updates the projected dinner delta.
-   - Test Bell produces audio without console errors.
+   - Test Bell and Test Voice in Settings produce audio/speech without console errors.

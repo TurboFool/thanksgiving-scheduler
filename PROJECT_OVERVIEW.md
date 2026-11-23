@@ -17,25 +17,28 @@ Cooking a large family or holiday meal involves tightly coupled constraints:
 ## 2. Core Data Model (`src/types.ts`)
 
 - **`Appliance`**: `id`, `name`, `capacity`, `slotLabel`, `hasTemperature`, `tempTolerance`, `color`
-- **`MealItem`**: `id`, `name`, `course`, `servings?`, `dietaryTags?`, `rawNotes`, `sourceUrl?`, `convertedNotes`, `prepAheadNotes?`, `finishConstraint`, `steps[]`, `aiProcessedAt?`, `manualChangeLog[]`, `libraryItemId?`
+- **`MealStep`**: `id`, `title`, `dish`, `durationMin`, `applianceId`, `slotsRequired`, `temperature?`, `dependencies[]`, `readyBeforeIds[]`, `mustFinishByDinner`, `finishConstraint?`, `pinnedStartMin?`, `canPrepEarly?`, `earlyPrepMinBefore?`, `earlyPrepMaxBefore?`, `preservationNotes?`, plus live timer fields.
+- **`MealItem`**: `id`, `name`, `course`, `servings?`, `portionMultiplier?`, `dietaryTags?`, `rawNotes`, `sourceUrl?`, `ingredients?`, `recipeInstructions?`, `convertedNotes`, `prepAheadNotes?`, `scalingReview?`, `finishConstraint`, `steps[]`, `aiProcessedAt?`, `manualChangeLog[]`, `libraryItemId?`
 - **`MealEvent`**: `id`, `name`, `targetDinnerMin`, `simulatedNowMin`, `mealItems[]`, `appliancesOverride?`
 - **`ThymeLineWorkspace`**: `schemaVersion`, `syncVersion`, `activeEventId`, `events[]`, `mealLibrary[]`, `defaultAppliances[]`
 
 ---
 
-## 3. Deterministic Scheduling Engine (`src/scheduler.ts`)
+## 3. Deterministic Scheduling & Scaling (`src/scheduler.ts`, `src/recipeScaler.ts`)
 
 All scheduling and cascading math runs **100% locally and deterministically** in `computeSchedule`:
 1. **Unified DAG & Cycle Detection**: Merges `dependencies` and `readyBeforeIds` with Kahn's topological sort.
-2. **Pass 1 — Backward Resource-Constrained Pass**: Anchors each step to its `finishConstraint` (`at_target`, `before_target`, `window`, `after_target`) and places tasks ALAP without exceeding `appliance.capacity` or `tempTolerance`.
-3. **Pass 2 — Forward Live-Cascade Pass**: Pins `done`, `running`, and `paused` steps and schedules `pending` steps at the earliest conflict-free slot.
+2. **Pass 1 — Backward Resource-Constrained Pass**: Anchors each step to its `finishConstraint` (`at_target`, `before_target`, `window`, `after_target`) or manual `pinnedStartMin`, and places tasks ALAP without exceeding `appliance.capacity` or `tempTolerance`.
+3. **Pass 2 — Forward Live-Cascade Pass**: Pins `done`, `running`, and `paused` steps, honors `pinnedStartMin` overrides, and schedules `pending` steps at the earliest conflict-free slot.
+4. **Recipe Scaling (`src/recipeScaler.ts`)**: Deterministically scales `1X` ingredient quantities (integers, decimals, fractions, unicode fractions, and ranges) and servings labels.
 
 ---
 
-## 4. Cloud Sync & Deployment (`functions/api/sync.ts`, `src/sync.ts`)
+## 4. Cloud Sync, Settings & Deployment (`functions/api/sync.ts`, `src/sync.ts`, `SettingsModal.tsx`)
 
 - **Production Domain**: `https://thymeline.sariandjarrett.com` (hosted on Cloudflare Pages).
 - **Cloudflare Pages Function** (`GET`/`PUT /api/sync`): Backed by R2 bucket `app-thymeline` bound as `THYMELINE_BUCKET` (or optional KV namespace `THYMELINE_KV`), protected by the `SYNC_PASSCODE` secret under **Settings → Variables and Secrets** with optimistic `syncVersion` conflict detection.
+- **Unified Settings (`SettingsModal.tsx`)**: Centralizes Gemini API key, sync passcode, audio/voice toggles, **Test Bell**, **Test Voice**, simulated clock, and SemVer version display (`__APP_VERSION__`).
 - `localStorage` (`thymeline_workspace_v1`, `thymeline_settings_v1`) caches everything locally for offline kitchen reliability.
 
 ---

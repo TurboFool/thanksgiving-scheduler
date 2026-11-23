@@ -207,7 +207,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <div className="modal-footer">
             <span style={{ fontSize: '0.74rem', color: 'var(--ink-muted)' }}>
-              Credentials stay in your browser localStorage.
+              <strong className="mono">ThymeLine v{__APP_VERSION__}</strong> · Credentials stay in
+              your browser localStorage.
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" className="btn btn-ghost" onClick={onClose}>
