@@ -159,6 +159,7 @@ export function createDefaultWorkspace(): ThymeLineWorkspace {
     mealLibrary: defaultItems.map((it) => ({
       ...it,
       id: `lib-${it.id}`,
+      steps: it.steps.map((s) => ({ ...s, applianceId: '' })),
     })),
     defaultAppliances: DEFAULT_APPLIANCES,
   };
@@ -234,7 +235,11 @@ export function loadInitialWorkspace(): {
             updatedAt: now,
             activeEventId: migratedEvent.id,
             events: [migratedEvent],
-            mealLibrary: items.map((it) => ({ ...it, id: `lib-${it.id}` })),
+            mealLibrary: items.map((it) => ({
+              ...it,
+              id: `lib-${it.id}`,
+              steps: it.steps.map((s) => ({ ...s, applianceId: '' })),
+            })),
             defaultAppliances: legacy.appliances,
           },
           settings: mergedSettings,

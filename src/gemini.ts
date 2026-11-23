@@ -387,7 +387,9 @@ export async function reEvaluateEventWithGemini(
       const stepsStr = it.steps
         .map(
           (s) =>
-            `  * ${s.title}: ${s.durationMin}m on ${s.applianceId}${s.temperature ? ` @ ${s.temperature}°F` : ''}`
+            `  * ${s.title}: ${s.durationMin}m on ${
+              s.applianceId || 'UNASSIGNED (recommend best appliance)'
+            }${s.temperature ? ` @ ${s.temperature}°F` : ''}`
         )
         .join('\n');
       return `- ${it.name} (${it.course}, finish: ${it.finishConstraint.mode})${changes}\n${stepsStr}`;

@@ -585,6 +585,7 @@ export function App() {
         ...saved,
         id: libId,
         libraryItemId: libId,
+        steps: saved.steps.map((s) => ({ ...s, applianceId: '' })),
         manualChangeLog: [],
         updatedAt: Date.now(),
       };
@@ -655,6 +656,7 @@ export function App() {
       ...item,
       id: libId,
       libraryItemId: libId,
+      steps: item.steps.map((s) => ({ ...s, applianceId: '' })),
       manualChangeLog: [],
       updatedAt: Date.now(),
     };

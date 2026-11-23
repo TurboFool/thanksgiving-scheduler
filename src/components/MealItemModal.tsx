@@ -220,9 +220,9 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       title: `${name.trim() || 'Dish'} — Step ${steps.length + 1}`,
       dish: name.trim() || 'General',
       durationMin: 20,
-      applianceId: app?.id ?? 'oven',
+      applianceId: isLibraryMode ? '' : app?.id ?? 'oven',
       slotsRequired: 1,
-      temperature: app?.hasTemperature ? 350 : undefined,
+      temperature: isLibraryMode || app?.hasTemperature ? 350 : undefined,
       dependencies: steps.length > 0 ? [steps[steps.length - 1].id] : [],
       readyBeforeIds: [],
       mustFinishByDinner: finishMode !== 'after_target',
@@ -922,7 +922,12 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                           <div className="upnext-title">{s.title}</div>
                           <div className="upnext-sub">
                             <span>{formatDuration(s.durationMin)}</span>
-                            <span>· {appMap.get(s.applianceId)?.name ?? s.applianceId}</span>
+                            <span>
+                              ·{' '}
+                              {s.applianceId
+                                ? appMap.get(s.applianceId)?.name ?? s.applianceId
+                                : 'Unassigned (choose per event)'}
+                            </span>
                             {s.temperature !== undefined && (
                               <span className="pill temp">{s.temperature}°F</span>
                             )}

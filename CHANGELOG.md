@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.2.0] — 2026-11-22
+
+### Changed
+- **Appliance-Agnostic Meal Library**: Saving a dish to the **Meal Library** now clears specific appliance assignments (`applianceId: ''`) while preserving temperature, duration, slots, and notes.
+- **Unassigned Appliance Support**: Added `(Unassigned — choose per event)` in `StepModal` (with temperature editing still available) and updated **AI Re-evaluate Event** in `gemini.ts` to recommend best-fit appliances for unassigned steps.
+
+---
+
 ## [2.1.1] — 2026-11-22
 
 ### Fixed

@@ -27,7 +27,7 @@ export const StepModal: React.FC<StepModalProps> = ({
   const [title, setTitle] = useState(step?.title ?? '');
   const [dish, setDish] = useState(step?.dish ?? defaultDish ?? '');
   const [durationMin, setDurationMin] = useState(step?.durationMin ?? 30);
-  const [applianceId, setApplianceId] = useState(step?.applianceId ?? appliances[0]?.id ?? 'oven');
+  const [applianceId, setApplianceId] = useState(step?.applianceId ?? '');
   const [slotsRequired, setSlotsRequired] = useState(step?.slotsRequired ?? 1);
   const [temperature, setTemperature] = useState<string>(
     step?.temperature !== undefined ? String(step.temperature) : ''
@@ -72,7 +72,9 @@ export const StepModal: React.FC<StepModalProps> = ({
     if (!title.trim()) return;
     const dur = Math.max(1, Number(durationMin) || 15);
     const parsedTemp =
-      selectedApp?.hasTemperature && temperature.trim() !== '' ? Number(temperature) : undefined;
+      (selectedApp?.hasTemperature || applianceId === '') && temperature.trim() !== ''
+        ? Number(temperature)
+        : undefined;
 
     const saved: MealStep = {
       id: step?.id ?? `step-${Date.now()}`,
@@ -158,6 +160,7 @@ export const StepModal: React.FC<StepModalProps> = ({
                   value={applianceId}
                   onChange={(e) => setApplianceId(e.target.value)}
                 >
+                  <option value="">(Unassigned — choose per event)</option>
                   {appliances.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} ({a.capacity} {a.slotLabel}
@@ -181,10 +184,12 @@ export const StepModal: React.FC<StepModalProps> = ({
                 />
               </div>
 
-              {selectedApp?.hasTemperature && (
+              {(selectedApp?.hasTemperature || applianceId === '') && (
                 <div className="form-field">
                   <label htmlFor="step-temp">
-                    Temperature (°F, ±{selectedApp.tempTolerance}°F shareable)
+                    {selectedApp
+                      ? `Temperature (°F, ±${selectedApp.tempTolerance}°F shareable)`
+                      : 'Temperature (°F, optional)'}
                   </label>
                   <input
                     id="step-temp"
