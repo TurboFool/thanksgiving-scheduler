@@ -3,6 +3,8 @@ export type StepStatus = 'pending' | 'running' | 'paused' | 'done';
 export interface Appliance {
   id: string;
   name: string;
+  /** Optional grouping category (e.g. "Oven", "Stovetop", "Counter") for multi-unit balancing */
+  category?: string;
   /** Number of simultaneous slots (e.g., oven racks, stovetop burners) */
   capacity: number;
   /** Unit label for slots, e.g. "rack", "burner", "spot" */
@@ -137,6 +139,8 @@ export interface ThymeLineWorkspace {
 }
 
 export interface ScheduledStep extends MealStep {
+  /** Concrete appliance ID selected by scheduler (resolves category:* targets, or '' if unassigned) */
+  resolvedApplianceId: string;
   /** Planned/projected start in minutes from midnight */
   startMin: number;
   /** Planned/projected end in minutes from midnight */

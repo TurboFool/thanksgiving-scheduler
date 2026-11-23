@@ -47,6 +47,16 @@ export const StepModal: React.FC<StepModalProps> = ({
   const [notes, setNotes] = useState(step?.notes ?? '');
 
   const selectedApp = appliances.find((a) => a.id === applianceId);
+  const categories = Array.from(
+    new Set(appliances.map((a) => (a.category || '').trim()).filter(Boolean))
+  );
+  const isCategoryTarget = applianceId.startsWith('category:');
+  const categoryName = isCategoryTarget ? applianceId.slice('category:'.length) : '';
+  const categoryHasTemp =
+    isCategoryTarget &&
+    appliances.some(
+      (a) => (a.category || '').trim().toLowerCase() === categoryName.toLowerCase() && a.hasTemperature
+    );
   const otherSteps = allSteps.filter((s) => s.id !== step?.id);
 
   const toggleId = (list: string[], setList: (v: string[]) => void, id: string) => {
@@ -72,7 +82,8 @@ export const StepModal: React.FC<StepModalProps> = ({
     if (!title.trim()) return;
     const dur = Math.max(1, Number(durationMin) || 15);
     const parsedTemp =
-      (selectedApp?.hasTemperature || applianceId === '') && temperature.trim() !== ''
+      (selectedApp?.hasTemperature || categoryHasTemp || applianceId === '') &&
+      temperature.trim() !== ''
         ? Number(temperature)
         : undefined;
 
@@ -154,19 +165,30 @@ export const StepModal: React.FC<StepModalProps> = ({
               </div>
 
               <div className="form-field">
-                <label htmlFor="step-appliance">Appliance</label>
+                <label htmlFor="step-appliance">Appliance / Category</label>
                 <select
                   id="step-appliance"
                   value={applianceId}
                   onChange={(e) => setApplianceId(e.target.value)}
                 >
                   <option value="">(Unassigned — choose per event)</option>
-                  {appliances.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({a.capacity} {a.slotLabel}
-                      {a.capacity > 1 ? 's' : ''})
-                    </option>
-                  ))}
+                  {categories.length > 0 && (
+                    <optgroup label="By Category (Auto-Balance Across Units)">
+                      {categories.map((cat) => (
+                        <option key={`cat-${cat}`} value={`category:${cat}`}>
+                          Any {cat} (auto-balance)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Specific Appliances">
+                    {appliances.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.capacity} {a.slotLabel}
+                        {a.capacity > 1 ? 's' : ''})
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
 
@@ -184,7 +206,7 @@ export const StepModal: React.FC<StepModalProps> = ({
                 />
               </div>
 
-              {(selectedApp?.hasTemperature || applianceId === '') && (
+              {(selectedApp?.hasTemperature || categoryHasTemp || applianceId === '') && (
                 <div className="form-field">
                   <label htmlFor="step-temp">
                     {selectedApp

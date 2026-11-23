@@ -87,7 +87,11 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
 
   return arr.map((item, idx) => {
     const durationMin = Math.max(1, Number(item.durationMin) || 15);
-    const applianceId = validAppIds.has(item.applianceId) ? item.applianceId : fallbackAppId;
+    const rawAppId = typeof item.applianceId === 'string' ? item.applianceId.trim() : '';
+    const applianceId =
+      rawAppId === '' || rawAppId.startsWith('category:') || validAppIds.has(rawAppId)
+        ? rawAppId
+        : fallbackAppId;
     const temp =
       item.temperature !== null && item.temperature !== undefined && item.temperature !== ''
         ? Number(item.temperature)
@@ -569,6 +573,235 @@ If no step timing/slot changes are needed, return "suggestedStepUpdates": [].`;
     issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [],
     suggestedStepUpdates: Array.isArray(parsed.suggestedStepUpdates)
       ? parsed.suggestedStepUpdates
+      : [],
+  };
+}
+
+export interface AutoFillDishResult {
+  name: string;
+  course: string;
+  servings?: string;
+  sourceUrl?: string;
+  ingredients: string[];
+  recipeInstructions: string;
+  convertedNotes: string;
+  prepAheadNotes?: string;
+  steps: MealStep[];
+}
+
+export async function autoFillDishWithGemini(
+  apiKey: string,
+  input: string,
+  appliances: Appliance[],
+  isLibraryMode = false
+): Promise<AutoFillDishResult> {
+  const urlMatch = input.match(/https?:\/\/\S+/i);
+  const detectedUrl = urlMatch ? urlMatch[0] : undefined;
+
+  const categories = Array.from(
+    new Set(appliances.map((a) => (a.category || '').trim()).filter(Boolean))
+  );
+  const appSummary = appliances
+    .map(
+      (a) =>
+        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}", capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}`
+    )
+    .join('\n');
+
+  const prompt = `You are a culinary planning assistant for ThymeLine.
+Convert the following dish description or recipe URL into a complete structured dish record.
+
+User Input:
+${input.trim()}
+
+Available Appliances:
+${appSummary}
+${categories.length > 0 ? `Available Categories (use "category:<Name>" for auto-balancing across units, e.g. "category:Oven"): ${categories.join(', ')}` : ''}
+
+Rules:
+1. ${
+    isLibraryMode
+      ? 'This dish is being saved to the reusable Library: for ovens or multi-unit appliances use "category:Oven" (or "" if unsure), while standard prep/stovetop can use "counter" or "stovetop".'
+      : 'Use either a specific appliance id above, "category:<Name>" (e.g. "category:Oven" if multiple ovens exist), or "" if unassigned.'
+  }
+2. Extract or infer realistic ingredients (1X base, one per line), concise recipe instructions, sanitized kitchen convertedNotes, optional prepAheadNotes, and concrete steps.
+3. Return ONLY a valid JSON object (no markdown commentary):
+{
+  "name": "Dish Name",
+  "course": "Main | Side | Appetizer | Sauce / Gravy | Bread | Dessert | Beverage | Prep / Other",
+  "servings": "e.g., 8 servings",
+  "ingredients": ["1 lb green beans", "2 tbsp butter"],
+  "recipeInstructions": "Step-by-step recipe method...",
+  "convertedNotes": "Concise kitchen summary...",
+  "prepAheadNotes": "Optional day-before prep tip...",
+  "steps": [
+    {
+      "id": "unique-kebab-id",
+      "title": "Short step title",
+      "dish": "Dish Name",
+      "durationMin": 30,
+      "applianceId": "category:Oven",
+      "slotsRequired": 1,
+      "temperature": 350,
+      "dependencies": [],
+      "readyBeforeIds": [],
+      "mustFinishByDinner": true,
+      "notes": "Key cue"
+    }
+  ]
+}`;
+
+  const body: Record<string, unknown> = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2 },
+  };
+  if (detectedUrl) {
+    body.tools = [{ url_context: {} }];
+  } else {
+    body.generationConfig = { responseMimeType: 'application/json', temperature: 0.2 };
+  }
+
+  const rawText = await callGeminiWithFallback(apiKey, body);
+  const parsed = extractJsonObject<Partial<AutoFillDishResult>>(rawText);
+  const dishName = String(parsed.name || 'New Dish').trim();
+  const steps = parseImportedSteps(JSON.stringify(parsed.steps ?? []), appliances).map((s) => ({
+    ...s,
+    dish: dishName,
+  }));
+
+  return {
+    name: dishName,
+    course: String(parsed.course || 'Side').trim(),
+    servings: parsed.servings ? String(parsed.servings).trim() : undefined,
+    sourceUrl: detectedUrl,
+    ingredients: Array.isArray(parsed.ingredients)
+      ? parsed.ingredients.map((i) => String(i).trim()).filter(Boolean)
+      : [],
+    recipeInstructions: String(parsed.recipeInstructions ?? '').trim(),
+    convertedNotes: String(parsed.convertedNotes ?? '').trim(),
+    prepAheadNotes: parsed.prepAheadNotes ? String(parsed.prepAheadNotes).trim() : undefined,
+    steps,
+  };
+}
+
+export interface ScheduleAdjustmentProposal {
+  stepId: string;
+  stepTitle: string;
+  applianceId?: string;
+  durationMin?: number;
+  slotsRequired?: number;
+  temperature?: number;
+  pinnedStartMin?: number | null;
+  reason: string;
+}
+
+export interface ScheduleEvaluationResult {
+  reply: string;
+  recommendedUpdates: ScheduleAdjustmentProposal[];
+}
+
+export async function evaluateAndAdjustScheduleWithGemini(
+  apiKey: string,
+  conversation: Array<{ role: 'user' | 'model'; text: string }>,
+  items: MealItem[],
+  scheduledSteps: ScheduledStep[],
+  appliances: Appliance[],
+  targetDinnerMin: number,
+  projectedDinnerMin: number
+): Promise<ScheduleEvaluationResult> {
+  const appSummary = appliances
+    .map(
+      (a) =>
+        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}", capacity: ${a.capacity} ${a.slotLabel}(s)${
+          a.hasTemperature ? `, tempTolerance: ±${a.tempTolerance}°F` : ''
+        }`
+    )
+    .join('\n');
+
+  const stepSummary = scheduledSteps
+    .map((s) => {
+      const loc = s.applianceId
+        ? s.applianceId === s.resolvedApplianceId
+          ? s.applianceId
+          : `${s.applianceId} -> ${s.resolvedApplianceId}`
+        : 'UNASSIGNED';
+      return `- stepId: "${s.id}", dish: "${s.dish}", title: "${s.title}", status: ${s.status}, time: ${formatTimeMin(
+        s.startMin
+      )}–${formatTimeMin(s.endMin)} (${s.durationMin}m), location: ${loc}, slots: ${s.slotsRequired}${
+        s.temperature ? `, temp: ${s.temperature}°F` : ''
+      }${s.isDelayed ? ` [DELAYED +${s.delayMin}m]` : ''}${
+        s.canPrepEarly ? ` [CAN PREP EARLY]` : ''
+      }`;
+    })
+    .join('\n');
+
+  const itemSummary = items
+    .map(
+      (it) =>
+        `- ${it.name} (${it.course}, finish: ${it.finishConstraint.mode}${
+          it.manualChangeLog.length > 0 ? `, ${it.manualChangeLog.length} manual edit(s)` : ''
+        })`
+    )
+    .join('\n');
+
+  const systemContext = `You are ThymeLine's interactive culinary schedule optimizer.
+Target Serve Time: ${formatTimeMin(targetDinnerMin)}
+Current Projected Finish: ${formatTimeMin(projectedDinnerMin)}
+
+Available Appliances:
+${appSummary}
+
+Dishes in Event:
+${itemSummary}
+
+Current Scheduled Steps:
+${stepSummary}
+
+Evaluate the current schedule for:
+1. Any UNASSIGNED steps that need an appliance (or "category:<Name>") assigned.
+2. Oven/appliance rack bottlenecks, temperature conflicts, or steps that can be spread across multiple appliances in the same category.
+3. Delays or dishes that could be prepped early / moved to an earlier slot.
+4. Any specific corrections or preferences the user asks for in the conversation.
+
+Return ONLY a valid JSON object:
+{
+  "reply": "Clear, concise summary of conflicts, unassigned steps, and your recommended plan (under 200 words).",
+  "recommendedUpdates": [
+    {
+      "stepId": "exact-step-id-from-above",
+      "stepTitle": "Step title",
+      "applianceId": "optional-new-appliance-id-or-category:Oven",
+      "durationMin": 30,
+      "slotsRequired": 1,
+      "temperature": 350,
+      "pinnedStartMin": null,
+      "reason": "Brief reason for this change"
+    }
+  ]
+}
+Only include fields in each update object that actually need to change.`;
+
+  const contents = [
+    { role: 'user', parts: [{ text: systemContext }] },
+    ...conversation.map((turn) => ({
+      role: turn.role,
+      parts: [{ text: turn.text }],
+    })),
+  ];
+
+  const rawText = await callGeminiWithFallback(apiKey, {
+    contents,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.25,
+    },
+  });
+
+  const parsed = extractJsonObject<Partial<ScheduleEvaluationResult>>(rawText);
+  return {
+    reply: String(parsed.reply ?? '').trim(),
+    recommendedUpdates: Array.isArray(parsed.recommendedUpdates)
+      ? parsed.recommendedUpdates
       : [],
   };
 }

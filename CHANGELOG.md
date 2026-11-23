@@ -5,6 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.3.0] — 2026-11-22
+
+### Added
+- **Appliance Categories & Auto-Balancing**: Added `category` to `Appliance` (e.g., `Oven`, `Stovetop`, `Counter`) and `category:<Name>` targeting in `StepModal` and `computeSchedule`, allowing multi-unit appliances like two ovens to automatically balance or share temperature-compatible racks (`resolvedApplianceId`).
+- **Needs Location Gantt Lane & Quick-Assign**: Steps with an unassigned `applianceId` (`''`) now appear in a dedicated **Needs Location** swimlane at the top of the Gantt chart with an inline **Assign...** dropdown.
+- **Gemini Auto-Fill in Add Dish**: Added an **Auto-Fill Dish with Gemini** bar at the top of `MealItemModal` (for both Event and Meal Library dishes) to parse a dish description, recipe notes, or URL into structured dish details and steps.
+- **Conversational Gemini Schedule Evaluator**: Refocused the main **Gemini** modal on evaluating the live schedule for conflicts, bottlenecks, and unassigned steps, supporting follow-up corrections/replies and one-click application of proposed timeline & appliance adjustments (while preserving **Import / Add Items** and **Export / Backup**).
+- **Proactive Dish-Add Schedule Review**: Adding a new dish (directly or from the Meal Library) now offers a prompt banner to open Gemini and optimize the updated schedule.
+
+### Changed
+- **Smart Library Location Mapping**: Saving a dish to the Meal Library now maps multi-unit/oven appliances to `category:<Category>` (e.g., `category:Oven`) while preserving single-unit prep/stovetop locations like `stovetop` and `counter`.
+
+---
+
 ## [2.2.0] — 2026-11-22
 
 ### Changed

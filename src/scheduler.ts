@@ -188,6 +188,9 @@ export function computeSchedule(
     return {
       steps: rawSteps.map((s) => ({
         ...s,
+        resolvedApplianceId: s.applianceId.startsWith('category:')
+          ? fallbackAppliance.id
+          : s.applianceId,
         startMin: targetDinnerMin - s.durationMin,
         endMin: targetDinnerMin,
         laneRow: 0,
@@ -206,20 +209,31 @@ export function computeSchedule(
     };
   }
 
+  const getCandidateAppliances = (specId: string): Appliance[] => {
+    if (!specId) return [];
+    if (specId.startsWith('category:')) {
+      const cat = specId.slice('category:'.length).trim().toLowerCase();
+      const matches = appliances.filter(
+        (a) => (a.category || '').trim().toLowerCase() === cat
+      );
+      return matches.length > 0 ? matches : [fallbackAppliance];
+    }
+    return [applianceMap.get(specId) ?? fallbackAppliance];
+  };
+
   // 3. Backward Resource-Constrained Pass (Ideal Plan anchored to targetDinnerMin & finishConstraint)
   const idealIntervalsByApp = new Map<string, Interval[]>();
   for (const app of appliances) idealIntervalsByApp.set(app.id, []);
 
   const idealStart = new Map<string, number>();
   const idealEnd = new Map<string, number>();
+  const idealApp = new Map<string, string>();
 
   for (let i = topoOrder.length - 1; i >= 0; i--) {
     const id = topoOrder[i];
     const step = stepMap.get(id)!;
-    const app = applianceMap.get(step.applianceId) ?? fallbackAppliance;
     const duration = Math.max(1, step.durationMin);
 
-    // Latest end is min(finishConstraint/targetDinnerMin, min(idealStart of dependents))
     let { latestEnd } = getStepTargetEnd(step, targetDinnerMin);
     if (step.pinnedStartMin !== undefined) {
       latestEnd = step.pinnedStartMin + duration;
@@ -231,48 +245,64 @@ export function computeSchedule(
       }
     }
 
-    const appIntervals = idealIntervalsByApp.get(app.id) ?? [];
-    if (!idealIntervalsByApp.has(app.id)) idealIntervalsByApp.set(app.id, appIntervals);
-
-    // Candidate end times: latestEnd, plus iv.start for any existing interval <= latestEnd
-    const candidates = new Set<number>([latestEnd]);
-    for (const iv of appIntervals) {
-      if (iv.start <= latestEnd) {
-        candidates.add(iv.start);
-      }
-    }
-    const sortedCandidates = Array.from(candidates).sort((a, b) => b - a);
-
-    let chosenEnd = latestEnd;
-    let chosenRow = 0;
-    for (const candEnd of sortedCandidates) {
-      const candStart = candEnd - duration;
-      const check = findValidPlacement(
-        candStart,
-        candEnd,
-        step.slotsRequired,
-        step.temperature,
-        app,
-        appIntervals
-      );
-      if (check.valid) {
-        chosenEnd = candEnd;
-        chosenRow = check.row;
-        break;
-      }
+    const candidatesApps = getCandidateAppliances(step.applianceId);
+    if (candidatesApps.length === 0) {
+      idealStart.set(id, latestEnd - duration);
+      idealEnd.set(id, latestEnd);
+      idealApp.set(id, '');
+      continue;
     }
 
+    let bestEnd = -Infinity;
+    let bestRow = 0;
+    let bestApp = candidatesApps[0];
+
+    for (const app of candidatesApps) {
+      const appIntervals = idealIntervalsByApp.get(app.id) ?? [];
+      if (!idealIntervalsByApp.has(app.id)) idealIntervalsByApp.set(app.id, appIntervals);
+
+      const candidates = new Set<number>([latestEnd]);
+      for (const iv of appIntervals) {
+        if (iv.start <= latestEnd) candidates.add(iv.start);
+      }
+      const sortedCandidates = Array.from(candidates).sort((a, b) => b - a);
+
+      for (const candEnd of sortedCandidates) {
+        const candStart = candEnd - duration;
+        const check = findValidPlacement(
+          candStart,
+          candEnd,
+          step.slotsRequired,
+          step.temperature,
+          app,
+          appIntervals
+        );
+        if (check.valid) {
+          if (candEnd > bestEnd) {
+            bestEnd = candEnd;
+            bestRow = check.row;
+            bestApp = app;
+          }
+          break;
+        }
+      }
+    }
+
+    const chosenEnd = bestEnd === -Infinity ? latestEnd : bestEnd;
     const chosenStart = chosenEnd - duration;
     idealStart.set(id, chosenStart);
     idealEnd.set(id, chosenEnd);
-    appIntervals.push({
+    idealApp.set(id, bestApp.id);
+    const targetIntervals = idealIntervalsByApp.get(bestApp.id) ?? [];
+    targetIntervals.push({
       stepId: id,
       start: chosenStart,
       end: chosenEnd,
       slots: step.slotsRequired,
       temp: step.temperature,
-      row: chosenRow,
+      row: bestRow,
     });
+    idealIntervalsByApp.set(bestApp.id, targetIntervals);
   }
 
   // 4. Forward Live-Cascade Pass
@@ -282,11 +312,31 @@ export function computeSchedule(
   const liveStart = new Map<string, number>();
   const liveEnd = new Map<string, number>();
   const liveRow = new Map<string, number>();
+  const liveApp = new Map<string, string>();
 
   // First, pin 'done', 'running', and 'paused' steps so their real-time occupancy is respected
   for (const id of topoOrder) {
     const step = stepMap.get(id)!;
-    const app = applianceMap.get(step.applianceId) ?? fallbackAppliance;
+    if (step.status !== 'done' && step.status !== 'running' && step.status !== 'paused') continue;
+
+    const resolvedId = idealApp.get(id) ?? '';
+    if (!resolvedId) {
+      const s =
+        step.status === 'done'
+          ? step.actualStartMin ?? idealStart.get(id)!
+          : step.actualStartMin ?? nowMin;
+      const e =
+        step.status === 'done'
+          ? step.actualEndMin ?? s + Math.max(1, step.durationMin)
+          : Math.max(s + 1, nowMin + Math.max(1, Math.ceil(step.remainingSec / 60)));
+      liveStart.set(id, s);
+      liveEnd.set(id, e);
+      liveRow.set(id, 0);
+      liveApp.set(id, '');
+      continue;
+    }
+
+    const app = applianceMap.get(resolvedId) ?? fallbackAppliance;
     const appIntervals = liveIntervalsByApp.get(app.id) ?? [];
     if (!liveIntervalsByApp.has(app.id)) liveIntervalsByApp.set(app.id, appIntervals);
 
@@ -297,6 +347,7 @@ export function computeSchedule(
       liveStart.set(id, s);
       liveEnd.set(id, e);
       liveRow.set(id, check.row);
+      liveApp.set(id, app.id);
       appIntervals.push({
         stepId: id,
         start: s,
@@ -305,7 +356,7 @@ export function computeSchedule(
         temp: step.temperature,
         row: check.row,
       });
-    } else if (step.status === 'running' || step.status === 'paused') {
+    } else {
       const s = step.actualStartMin ?? nowMin;
       const remMin = Math.max(1, Math.ceil(step.remainingSec / 60));
       const e = Math.max(s + 1, nowMin + remMin);
@@ -313,6 +364,7 @@ export function computeSchedule(
       liveStart.set(id, s);
       liveEnd.set(id, e);
       liveRow.set(id, check.row);
+      liveApp.set(id, app.id);
       appIntervals.push({
         stepId: id,
         start: s,
@@ -329,13 +381,8 @@ export function computeSchedule(
     const step = stepMap.get(id)!;
     if (step.status !== 'pending') continue;
 
-    const app = applianceMap.get(step.applianceId) ?? fallbackAppliance;
-    const appIntervals = liveIntervalsByApp.get(app.id) ?? [];
-    if (!liveIntervalsByApp.has(app.id)) liveIntervalsByApp.set(app.id, appIntervals);
-
     const duration = Math.max(1, step.durationMin + (step.addedMin || 0));
 
-    // Earliest feasible start: if manually pinned, honor pinnedStartMin (unless a prereq finishes later)
     let earliest =
       step.pinnedStartMin !== undefined
         ? step.pinnedStartMin
@@ -347,45 +394,66 @@ export function computeSchedule(
       }
     }
 
-    const candidates = new Set<number>([earliest]);
-    for (const iv of appIntervals) {
-      if (iv.end >= earliest) {
-        candidates.add(iv.end);
-      }
-    }
-    const sortedCandidates = Array.from(candidates).sort((a, b) => a - b);
-
-    let chosenStart = earliest;
-    let chosenRow = 0;
-    for (const candStart of sortedCandidates) {
-      const candEnd = candStart + duration;
-      const check = findValidPlacement(
-        candStart,
-        candEnd,
-        step.slotsRequired,
-        step.temperature,
-        app,
-        appIntervals
-      );
-      if (check.valid) {
-        chosenStart = candStart;
-        chosenRow = check.row;
-        break;
-      }
+    const candidatesApps = getCandidateAppliances(step.applianceId);
+    if (candidatesApps.length === 0) {
+      liveStart.set(id, earliest);
+      liveEnd.set(id, earliest + duration);
+      liveRow.set(id, 0);
+      liveApp.set(id, '');
+      continue;
     }
 
+    let bestStart = Infinity;
+    let bestRow = 0;
+    let bestApp = candidatesApps[0];
+
+    for (const app of candidatesApps) {
+      const appIntervals = liveIntervalsByApp.get(app.id) ?? [];
+      if (!liveIntervalsByApp.has(app.id)) liveIntervalsByApp.set(app.id, appIntervals);
+
+      const candidates = new Set<number>([earliest]);
+      for (const iv of appIntervals) {
+        if (iv.end >= earliest) candidates.add(iv.end);
+      }
+      const sortedCandidates = Array.from(candidates).sort((a, b) => a - b);
+
+      for (const candStart of sortedCandidates) {
+        const candEnd = candStart + duration;
+        const check = findValidPlacement(
+          candStart,
+          candEnd,
+          step.slotsRequired,
+          step.temperature,
+          app,
+          appIntervals
+        );
+        if (check.valid) {
+          if (candStart < bestStart) {
+            bestStart = candStart;
+            bestRow = check.row;
+            bestApp = app;
+          }
+          break;
+        }
+      }
+    }
+
+    const chosenStart = bestStart === Infinity ? earliest : bestStart;
     const chosenEnd = chosenStart + duration;
     liveStart.set(id, chosenStart);
     liveEnd.set(id, chosenEnd);
-    liveRow.set(id, chosenRow);
-    appIntervals.push({
+    liveRow.set(id, bestRow);
+    liveApp.set(id, bestApp.id);
+    const targetIntervals = liveIntervalsByApp.get(bestApp.id) ?? [];
+    targetIntervals.push({
       stepId: id,
       start: chosenStart,
       end: chosenEnd,
       slots: step.slotsRequired,
       temp: step.temperature,
-      row: chosenRow,
+      row: bestRow,
     });
+    liveIntervalsByApp.set(bestApp.id, targetIntervals);
   }
 
   // 5. Compute projected dinner, earliest start, and slack
@@ -430,6 +498,7 @@ export function computeSchedule(
 
     return {
       ...s,
+      resolvedApplianceId: liveApp.get(s.id) ?? '',
       startMin,
       endMin,
       laneRow: liveRow.get(s.id) ?? 0,

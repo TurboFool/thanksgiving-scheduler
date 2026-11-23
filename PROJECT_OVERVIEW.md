@@ -16,8 +16,8 @@ Cooking a large family or holiday meal involves tightly coupled constraints:
 
 ## 2. Core Data Model (`src/types.ts`)
 
-- **`Appliance`**: `id`, `name`, `capacity`, `slotLabel`, `hasTemperature`, `tempTolerance`, `color`
-- **`MealStep`**: `id`, `title`, `dish`, `durationMin`, `applianceId`, `slotsRequired`, `temperature?`, `dependencies[]`, `readyBeforeIds[]`, `mustFinishByDinner`, `finishConstraint?`, `pinnedStartMin?`, `canPrepEarly?`, `earlyPrepMinBefore?`, `earlyPrepMaxBefore?`, `preservationNotes?`, plus live timer fields.
+- **`Appliance`**: `id`, `name`, `category?`, `capacity`, `slotLabel`, `hasTemperature`, `tempTolerance`, `color`
+- **`MealStep`**: `id`, `title`, `dish`, `durationMin`, `applianceId` (specific ID, `category:<Name>`, or `''` unassigned), `slotsRequired`, `temperature?`, `dependencies[]`, `readyBeforeIds[]`, `mustFinishByDinner`, `finishConstraint?`, `pinnedStartMin?`, `canPrepEarly?`, `earlyPrepMinBefore?`, `earlyPrepMaxBefore?`, `preservationNotes?`, plus live timer fields.
 - **`MealItem`**: `id`, `name`, `course`, `servings?`, `portionMultiplier?`, `dietaryTags?`, `rawNotes`, `sourceUrl?`, `ingredients?`, `recipeInstructions?`, `convertedNotes`, `prepAheadNotes?`, `scalingReview?`, `finishConstraint`, `steps[]`, `aiProcessedAt?`, `manualChangeLog[]`, `libraryItemId?`
 - **`MealEvent`**: `id`, `name`, `targetDinnerMin`, `simulatedNowMin`, `mealItems[]`, `appliancesOverride?`
 - **`ThymeLineWorkspace`**: `schemaVersion`, `syncVersion`, `activeEventId`, `events[]`, `mealLibrary[]`, `defaultAppliances[]`
@@ -28,7 +28,7 @@ Cooking a large family or holiday meal involves tightly coupled constraints:
 
 All scheduling and cascading math runs **100% locally and deterministically** in `computeSchedule`:
 1. **Unified DAG & Cycle Detection**: Merges `dependencies` and `readyBeforeIds` with Kahn's topological sort.
-2. **Pass 1 — Backward Resource-Constrained Pass**: Anchors each step to its `finishConstraint` (`at_target`, `before_target`, `window`, `after_target`) or manual `pinnedStartMin`, and places tasks ALAP without exceeding `appliance.capacity` or `tempTolerance`.
+2. **Pass 1 — Backward Resource-Constrained Pass**: Anchors each step to its `finishConstraint` (`at_target`, `before_target`, `window`, `after_target`) or manual `pinnedStartMin`, resolves `category:<Name>` targets across matching appliances, populates `resolvedApplianceId`, and places tasks ALAP without exceeding `appliance.capacity` or `tempTolerance`.
 3. **Pass 2 — Forward Live-Cascade Pass**: Pins `done`, `running`, and `paused` steps, honors `pinnedStartMin` overrides, and schedules `pending` steps at the earliest conflict-free slot.
 4. **Recipe Scaling (`src/recipeScaler.ts`)**: Deterministically scales `1X` ingredient quantities (integers, decimals, fractions, unicode fractions, and ranges) and servings labels.
 

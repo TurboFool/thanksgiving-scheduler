@@ -15,6 +15,7 @@ interface GanttTimelineProps {
   onSelectStep: (step: ScheduledStep) => void;
   onStartStep: (id: string) => void;
   onMoveStep?: (stepId: string, newStartMin: number) => void;
+  onAssignAppliance?: (stepId: string, applianceId: string) => void;
   onReorderAppliances?: (fromIndex: number, toIndex: number) => void;
 }
 
@@ -33,6 +34,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   onSelectStep,
   onStartStep,
   onMoveStep,
+  onAssignAppliance,
   onReorderAppliances,
 }) => {
   const [pxPerMin, setPxPerMin] = useState(4.6);
@@ -117,14 +119,41 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
     return arr;
   }, [startBound, endBound, tickStep]);
 
+  const unassignedSteps = useMemo(
+    () => steps.filter((s) => !s.resolvedApplianceId),
+    [steps]
+  );
+
+  const categories = useMemo(
+    () =>
+      Array.from(
+        new Set(appliances.map((a) => (a.category || '').trim()).filter(Boolean))
+      ),
+    [appliances]
+  );
+
   // Compute lane heights and step Y positions for SVG dependency arrows
   const laneLayout = useMemo(() => {
     let yCursor = 0;
     const laneMeta = new Map<string, { top: number; height: number; rows: number }>();
     const stepRects = new Map<string, { x: number; y: number; w: number; h: number }>();
 
+    if (unassignedSteps.length > 0) {
+      const rows = unassignedSteps.length;
+      const height = rows * ROW_HEIGHT + LANE_PAD_Y * 2;
+      laneMeta.set('__unassigned__', { top: yCursor, height, rows });
+      unassignedSteps.forEach((s, idx) => {
+        const x = (s.startMin - startBound) * pxPerMin;
+        const w = Math.max(120, (s.endMin - s.startMin) * pxPerMin);
+        const y = yCursor + LANE_PAD_Y + idx * ROW_HEIGHT + 3;
+        const h = ROW_HEIGHT - 6;
+        stepRects.set(s.id, { x, y, w, h });
+      });
+      yCursor += height;
+    }
+
     for (const app of appliances) {
-      const appSteps = steps.filter((s) => s.applianceId === app.id);
+      const appSteps = steps.filter((s) => s.resolvedApplianceId === app.id);
       let maxRowUsed = 1;
       for (const s of appSteps) {
         maxRowUsed = Math.max(maxRowUsed, s.laneRow + Math.max(1, s.slotsRequired));
@@ -145,7 +174,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
     }
 
     return { laneMeta, stepRects, totalHeight: yCursor };
-  }, [appliances, steps, startBound, pxPerMin]);
+  }, [appliances, steps, unassignedSteps, startBound, pxPerMin]);
 
   const nowX = (nowMin - startBound) * pxPerMin;
   const dinnerX = (targetDinnerMin - startBound) * pxPerMin;
@@ -201,9 +230,96 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
 
           {/* Body */}
           <div className="gantt-body" style={{ height: laneLayout.totalHeight }}>
+            {unassignedSteps.length > 0 && (() => {
+              const meta = laneLayout.laneMeta.get('__unassigned__')!;
+              return (
+                <div
+                  key="__unassigned__"
+                  className="gantt-lane"
+                  style={{ height: meta.height, background: 'var(--status-amber-soft)' }}
+                >
+                  <div className="gantt-lane-label" style={{ background: 'var(--status-amber-soft)' }}>
+                    <div className="lane-name" style={{ color: 'var(--status-amber)' }}>
+                      <span className="lane-dot" style={{ background: 'var(--status-amber)' }} />
+                      Needs Location
+                    </div>
+                    <div className="lane-cap">
+                      {unassignedSteps.length} unassigned step(s)
+                    </div>
+                  </div>
+                  <div className="gantt-lane-track" style={{ width: trackWidth }}>
+                    {ticks.map((t) => (
+                      <div
+                        key={t}
+                        className="gantt-grid-line"
+                        style={{ left: (t - startBound) * pxPerMin }}
+                      />
+                    ))}
+                    {unassignedSteps.map((s) => {
+                      const rect = laneLayout.stepRects.get(s.id)!;
+                      return (
+                        <div
+                          key={s.id}
+                          className="gantt-task status-pending"
+                          style={{
+                            left: rect.x,
+                            top: rect.y - meta.top,
+                            width: rect.w,
+                            height: rect.h,
+                            borderLeftWidth: 4,
+                            borderLeftColor: 'var(--status-amber)',
+                            borderStyle: 'dashed',
+                          }}
+                          onClick={() => onSelectStep(s)}
+                          title={`${s.title} — click to edit or choose an appliance`}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                            <span className="task-bar-title">{s.title}</span>
+                          </div>
+                          <div className="task-bar-sub" style={{ justifyContent: 'space-between' }}>
+                            <span className="mono">{formatDuration(s.endMin - s.startMin)}</span>
+                            {onAssignAppliance && (
+                              <select
+                                aria-label={`Assign appliance for ${s.title}`}
+                                value=""
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  if (e.target.value) onAssignAppliance(s.id, e.target.value);
+                                }}
+                                style={{
+                                  fontSize: '0.66rem',
+                                  padding: '1px 3px',
+                                  borderRadius: 4,
+                                  border: '1px solid var(--border-strong)',
+                                  background: '#fff',
+                                  maxWidth: 110,
+                                }}
+                              >
+                                <option value="">Assign...</option>
+                                {categories.map((cat) => (
+                                  <option key={`c-${cat}`} value={`category:${cat}`}>
+                                    Any {cat}
+                                  </option>
+                                ))}
+                                {appliances.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {appliances.map((app, appIdx) => {
               const meta = laneLayout.laneMeta.get(app.id)!;
-              const appSteps = steps.filter((s) => s.applianceId === app.id);
+              const appSteps = steps.filter((s) => s.resolvedApplianceId === app.id);
               const isDropTarget = overLaneIdx === appIdx && dragLaneIdx !== null && dragLaneIdx !== appIdx;
 
               return (

@@ -100,7 +100,7 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
                   background: 'var(--bg-canvas)',
                   opacity: dragIdx === idx ? 0.55 : 1,
                   display: 'grid',
-                  gridTemplateColumns: 'auto 1.5fr 0.8fr 0.9fr auto',
+                  gridTemplateColumns: 'auto 1.3fr 1fr 0.7fr 0.8fr auto',
                   gap: 10,
                   alignItems: 'end',
                 }}
@@ -125,6 +125,16 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
                     value={app.name}
                     onChange={(e) => updateItem(idx, { name: e.target.value })}
                     required
+                  />
+                </div>
+                <div className="form-field">
+                  <label>Category</label>
+                  <input
+                    type="text"
+                    list="appliance-categories"
+                    value={app.category ?? ''}
+                    onChange={(e) => updateItem(idx, { category: e.target.value })}
+                    placeholder="e.g., Oven"
                   />
                 </div>
                 <div className="form-field">
@@ -192,6 +202,15 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
             <button type="button" className="btn btn-secondary" onClick={addAppliance}>
               <Plus size={15} /> Add Appliance
             </button>
+            <datalist id="appliance-categories">
+              <option value="Oven" />
+              <option value="Stovetop" />
+              <option value="Counter" />
+              <option value="Air Fryer" />
+              <option value="Slow Cooker" />
+              <option value="Microwave" />
+              <option value="Grill" />
+            </datalist>
           </div>
 
           <div className="modal-footer">

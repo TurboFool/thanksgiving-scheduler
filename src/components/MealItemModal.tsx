@@ -23,6 +23,7 @@ import type {
   MealStep,
 } from '../types';
 import {
+  autoFillDishWithGemini,
   fetchRecipeFromUrlWithGemini,
   processMealItemWithGemini,
   reviewScaledRecipeWithGemini,
@@ -114,10 +115,50 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const [aiLoading, setAiLoading] = useState(false);
   const [urlLoading, setUrlLoading] = useState(false);
   const [scaleLoading, setScaleLoading] = useState(false);
+  const [quickFillInput, setQuickFillInput] = useState('');
+  const [quickFillLoading, setQuickFillLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [scaleReview, setScaleReview] = useState<ScaledRecipeReviewResult | null>(null);
   const [appliedScaleUpdates, setAppliedScaleUpdates] = useState(false);
   const [savedToLibMsg, setSavedToLibMsg] = useState(false);
+
+  const handleAutoFillDish = async () => {
+    setAiError(null);
+    if (!apiKey.trim()) {
+      setAiError('Configure your Gemini API key in Settings to auto-fill with Gemini.');
+      return;
+    }
+    if (!quickFillInput.trim()) {
+      setAiError('Describe the dish or paste a recipe URL first.');
+      return;
+    }
+    setQuickFillLoading(true);
+    try {
+      const filled = await autoFillDishWithGemini(
+        apiKey,
+        quickFillInput,
+        appliances,
+        isLibraryMode
+      );
+      setName(filled.name);
+      if (COURSES.includes(filled.course as DishCourse)) {
+        setCourse(filled.course as DishCourse);
+      }
+      if (filled.servings) setServings(filled.servings);
+      if (filled.sourceUrl) setSourceUrl(filled.sourceUrl);
+      if (filled.ingredients.length > 0) setIngredientsText(filled.ingredients.join('\n'));
+      if (filled.recipeInstructions) setRecipeInstructions(filled.recipeInstructions);
+      if (filled.convertedNotes) setConvertedNotes(filled.convertedNotes);
+      if (filled.prepAheadNotes) setPrepAheadNotes(filled.prepAheadNotes);
+      setSteps(filled.steps);
+      setAiProcessedAt(Date.now());
+      setManualChangeLog([]);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Failed to auto-fill dish with Gemini.');
+    } finally {
+      setQuickFillLoading(false);
+    }
+  };
 
   const handleLoadFromLibrary = (libId: string) => {
     const libItem = libraryItems.find((l) => l.id === libId);
@@ -461,6 +502,53 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                       <Plus size={12} /> Quick Add
                     </button>
                   )}
+                </div>
+              </div>
+            )}
+
+            {isNew && (
+              <div
+                style={{
+                  padding: 10,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg-canvas)',
+                  border: '1px solid var(--border-strong)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    color: 'var(--ink-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <Sparkles size={14} color="var(--accent-sage)" />
+                  Auto-Fill Dish with Gemini (describe a dish, paste notes, or paste a recipe URL)
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={quickFillInput}
+                    onChange={(e) => setQuickFillInput(e.target.value)}
+                    placeholder="e.g., Garlic mashed potatoes for 10, or https://..."
+                    style={{ flex: 1, minWidth: 220, padding: '6px 8px', fontSize: '0.82rem' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ padding: '5px 11px', fontSize: '0.76rem' }}
+                    onClick={handleAutoFillDish}
+                    disabled={quickFillLoading}
+                  >
+                    <Sparkles size={12} />
+                    {quickFillLoading ? 'Filling...' : 'Auto-Fill Fields'}
+                  </button>
                 </div>
               </div>
             )}

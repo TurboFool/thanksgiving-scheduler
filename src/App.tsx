@@ -36,7 +36,11 @@ import type {
 import { DEFAULT_APPLIANCES, DEFAULT_STEPS } from './defaultData';
 import { computeSchedule, formatCountdownSec, formatDuration, formatTimeMin } from './scheduler';
 import { soundManager } from './audio';
-import { mergeImportedSteps, reEvaluateEventWithGemini } from './gemini';
+import {
+  mergeImportedSteps,
+  reEvaluateEventWithGemini,
+  type ScheduleAdjustmentProposal,
+} from './gemini';
 import {
   cloneItemForEvent,
   flattenEventSteps,
@@ -574,6 +578,77 @@ export function App() {
     setEditingStep(null);
   };
 
+  const toLibraryStepApplianceId = (applianceId: string): string => {
+    if (!applianceId || applianceId.startsWith('category:')) return applianceId;
+    const app = appliances.find((a) => a.id === applianceId);
+    if (!app?.category) return applianceId;
+    const categoryCount = appliances.filter((a) => a.category === app.category).length;
+    if (app.category === 'Oven' || categoryCount > 1) {
+      return `category:${app.category}`;
+    }
+    return applianceId;
+  };
+
+  const promptScheduleReviewForDish = (dishName: string, addedSteps: MealStep[]) => {
+    const unassignedCount = addedSteps.filter((s) => !s.applianceId).length;
+    if (unassignedCount > 0) {
+      setScanNotice(
+        `Added "${dishName}" (${unassignedCount} step${unassignedCount === 1 ? '' : 's'} need a cooking location). Want Gemini to assign appliances and optimize the timeline?`
+      );
+      setScanAiAdvice(null);
+    } else if (activeEvent.mealItems.length > 0) {
+      setScanNotice(
+        `Added "${dishName}" to ${activeEvent.name}. Want Gemini to check for oven/prep conflicts or timing improvements?`
+      );
+      setScanAiAdvice(null);
+    }
+  };
+
+  const handleAssignAppliance = (stepId: string, applianceId: string) => {
+    const appLabel = applianceId.startsWith('category:')
+      ? `Any ${applianceId.slice(9)}`
+      : applianceMap.get(applianceId)?.name ?? 'Needs Location';
+    pushUndo(`Assign step to ${appLabel}`);
+    updateActiveEvent((ev) => ({
+      ...ev,
+      mealItems: ev.mealItems.map((it) => ({
+        ...it,
+        steps: it.steps.map((s) => (s.id === stepId ? { ...s, applianceId } : s)),
+      })),
+    }));
+    showToast(`Assigned to ${appLabel}`);
+  };
+
+  const handleApplyScheduleUpdates = (updates: ScheduleAdjustmentProposal[]) => {
+    if (updates.length === 0) return;
+    const updateMap = new Map(updates.map((u) => [u.stepId, u]));
+    pushUndo(`Apply ${updates.length} Gemini schedule adjustment${updates.length === 1 ? '' : 's'}`);
+    updateActiveEvent((ev) => ({
+      ...ev,
+      mealItems: ev.mealItems.map((it) => ({
+        ...it,
+        steps: it.steps.map((s) => {
+          const u = updateMap.get(s.id);
+          if (!u) return s;
+          return {
+            ...s,
+            ...(u.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
+            ...(u.pinnedStartMin !== undefined
+              ? { pinnedStartMin: u.pinnedStartMin === null ? undefined : u.pinnedStartMin }
+              : {}),
+            ...(u.durationMin !== undefined ? { durationMin: Math.max(1, Math.round(u.durationMin)) } : {}),
+            ...(u.temperature !== undefined
+              ? { temperature: u.temperature === null ? undefined : u.temperature }
+              : {}),
+          };
+        }),
+      })),
+    }));
+    setScanNotice(null);
+    setScanAiAdvice(null);
+    showToast(`Applied ${updates.length} Gemini schedule update${updates.length === 1 ? '' : 's'}`);
+  };
+
   // Meal Item (Dish) Actions
   const handleSaveMealItem = (saved: MealItem) => {
     const shouldReturnToLibrary = editingMealItem?.returnTo === 'library';
@@ -585,7 +660,10 @@ export function App() {
         ...saved,
         id: libId,
         libraryItemId: libId,
-        steps: saved.steps.map((s) => ({ ...s, applianceId: '' })),
+        steps: saved.steps.map((s) => ({
+          ...s,
+          applianceId: toLibraryStepApplianceId(s.applianceId),
+        })),
         manualChangeLog: [],
         updatedAt: Date.now(),
       };
@@ -621,6 +699,9 @@ export function App() {
       };
     });
     setEditingMealItem(null);
+    if (!isUpdate) {
+      promptScheduleReviewForDish(saved.name, saved.steps);
+    }
     showToast(isUpdate ? `Saved "${saved.name}"` : `Added "${saved.name}" to ${activeEvent.name}`);
   };
 
@@ -656,7 +737,10 @@ export function App() {
       ...item,
       id: libId,
       libraryItemId: libId,
-      steps: item.steps.map((s) => ({ ...s, applianceId: '' })),
+      steps: item.steps.map((s) => ({
+        ...s,
+        applianceId: toLibraryStepApplianceId(s.applianceId),
+      })),
       manualChangeLog: [],
       updatedAt: Date.now(),
     };
@@ -680,6 +764,7 @@ export function App() {
       ...ev,
       mealItems: [...ev.mealItems, cloned],
     }));
+    promptScheduleReviewForDish(libItem.name, cloned.steps);
     showToast(`Added "${libItem.name}" to ${activeEvent.name}`);
   };
 
@@ -1160,18 +1245,29 @@ export function App() {
                     ✕
                   </button>
                 </div>
-                {totalManualEdits > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   <button
                     type="button"
-                    className="btn btn-secondary"
+                    className="btn btn-primary"
                     style={{ alignSelf: 'flex-start', padding: '3px 8px', fontSize: '0.72rem' }}
-                    onClick={handleAiReEvaluate}
-                    disabled={scanAiLoading}
+                    onClick={() => setShowGeminiModal(true)}
                   >
                     <Sparkles size={12} />
-                    {scanAiLoading ? 'Evaluating...' : 'AI Re-evaluate Event'}
+                    Ask Gemini to Optimize
                   </button>
-                )}
+                  {totalManualEdits > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ alignSelf: 'flex-start', padding: '3px 8px', fontSize: '0.72rem' }}
+                      onClick={handleAiReEvaluate}
+                      disabled={scanAiLoading}
+                    >
+                      <Sparkles size={12} />
+                      {scanAiLoading ? 'Evaluating...' : 'Quick AI Summary'}
+                    </button>
+                  )}
+                </div>
                 {scanAiAdvice && (
                   <div className="advice-box" style={{ fontSize: '0.75rem', padding: 8 }}>
                     {scanAiAdvice}
@@ -1324,7 +1420,7 @@ export function App() {
                   </span>
                 </div>
                 {dishSteps.map((s) => {
-                  const app = applianceMap.get(s.applianceId);
+                  const app = applianceMap.get(s.resolvedApplianceId || s.applianceId);
                   return (
                     <div
                       key={s.id}
@@ -1428,7 +1524,7 @@ export function App() {
                     </div>
                   ) : (
                     activeSteps.map((s) => {
-                      const app = applianceMap.get(s.applianceId);
+                      const app = applianceMap.get(s.resolvedApplianceId || s.applianceId);
                       const isRinging = s.status === 'running' && s.remainingSec <= 0;
                       const totalPlannedSec = Math.max(60, (s.durationMin + s.addedMin) * 60);
                       const pct = Math.max(
@@ -1529,7 +1625,7 @@ export function App() {
                     <span>Up Next ({upNextSteps.length})</span>
                   </div>
                   {upNextSteps.map((s) => {
-                    const app = applianceMap.get(s.applianceId);
+                    const app = applianceMap.get(s.resolvedApplianceId || s.applianceId);
                     const startsIn = s.startMin - nowMin;
                     return (
                       <div
@@ -1638,6 +1734,7 @@ export function App() {
           onStartStep={startStep}
           onMoveStep={handleMoveStep}
           onReorderAppliances={handleReorderAppliances}
+          onAssignAppliance={handleAssignAppliance}
         />
       </main>
 
@@ -1892,12 +1989,14 @@ export function App() {
       {showGeminiModal && (
         <GeminiModal
           appliances={appliances}
+          mealItems={activeEvent.mealItems}
           steps={steps}
           scheduledSteps={schedule.steps}
           targetDinnerMin={targetDinnerMin}
           projectedDinnerMin={schedule.projectedDinnerMin}
           apiKey={settings.geminiApiKey}
           onOpenSettings={() => setShowSettingsModal(true)}
+          onApplyScheduleUpdates={handleApplyScheduleUpdates}
           onImportSteps={(imported, mode) => {
             const newItems = stepsToMealItems(imported);
             if (mode === 'add') {

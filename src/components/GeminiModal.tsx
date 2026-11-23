@@ -1,21 +1,34 @@
 import React, { useState } from 'react';
-import { X, Sparkles, Copy, Check, Download, Upload, AlertTriangle } from 'lucide-react';
-import type { Appliance, MealStep, ScheduledStep } from '../types';
+import {
+  X,
+  Sparkles,
+  Copy,
+  Check,
+  Download,
+  Upload,
+  AlertTriangle,
+  Send,
+  Sliders,
+} from 'lucide-react';
+import type { Appliance, MealItem, MealStep, ScheduledStep } from '../types';
 import {
   buildGeminiChatPrompt,
+  evaluateAndAdjustScheduleWithGemini,
   generateScheduleWithGemini,
-  getRecoveryAdviceWithGemini,
   parseImportedSteps,
+  type ScheduleAdjustmentProposal,
 } from '../gemini';
 
 interface GeminiModalProps {
   appliances: Appliance[];
+  mealItems: MealItem[];
   steps: MealStep[];
   scheduledSteps: ScheduledStep[];
   targetDinnerMin: number;
   projectedDinnerMin: number;
   apiKey: string;
   onOpenSettings: () => void;
+  onApplyScheduleUpdates: (updates: ScheduleAdjustmentProposal[]) => void;
   onImportSteps: (steps: MealStep[], mode: 'add' | 'replace') => void;
   onClose: () => void;
 }
@@ -25,16 +38,18 @@ const SAMPLE_MENU_TEXT =
 
 export const GeminiModal: React.FC<GeminiModalProps> = ({
   appliances,
+  mealItems,
   steps,
   scheduledSteps,
   targetDinnerMin,
   projectedDinnerMin,
   apiKey,
   onOpenSettings,
+  onApplyScheduleUpdates,
   onImportSteps,
   onClose,
 }) => {
-  const [tab, setTab] = useState<'paste' | 'api' | 'export'>('paste');
+  const [tab, setTab] = useState<'evaluate' | 'paste' | 'export'>('evaluate');
   const [mode, setMode] = useState<'add' | 'replace'>(steps.length > 0 ? 'add' : 'replace');
   const [menuInput, setMenuInput] = useState(steps.length > 0 ? '' : SAMPLE_MENU_TEXT);
   const [jsonInput, setJsonInput] = useState('');
@@ -42,9 +57,16 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   const [copiedExport, setCopiedExport] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [advice, setAdvice] = useState<string | null>(null);
+
+  // Interactive Schedule Evaluator state
+  const [chatTurns, setChatTurns] = useState<Array<{ role: 'user' | 'model'; text: string }>>([]);
+  const [followUpInput, setFollowUpInput] = useState('');
+  const [proposedUpdates, setProposedUpdates] = useState<ScheduleAdjustmentProposal[]>([]);
+  const [appliedUpdates, setAppliedUpdates] = useState(false);
 
   const effectiveMode = steps.length === 0 ? 'replace' : mode;
+  const unassignedCount = scheduledSteps.filter((s) => !s.resolvedApplianceId).length;
+  const delayedCount = scheduledSteps.filter((s) => s.isDelayed).length;
 
   const handleModeChange = (nextMode: 'add' | 'replace') => {
     setMode(nextMode);
@@ -108,24 +130,38 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
     }
   };
 
-  const handleGetAdvice = async () => {
+  const runEvaluation = async (userMessage?: string) => {
     setError(null);
+    setAppliedUpdates(false);
     if (!apiKey.trim()) {
       setError('Please configure your Gemini API key in Settings first.');
       return;
     }
+    const promptMsg =
+      userMessage?.trim() ||
+      'Evaluate my current event schedule for unassigned steps, appliance/oven conflicts, temperature clashes, and timing delays, and propose updates.';
+
+    const nextHistory: Array<{ role: 'user' | 'model'; text: string }> = [
+      ...chatTurns,
+      { role: 'user', text: promptMsg },
+    ];
+    setChatTurns(nextHistory);
+    setFollowUpInput('');
     setLoading(true);
     try {
-      const text = await getRecoveryAdviceWithGemini(
+      const res = await evaluateAndAdjustScheduleWithGemini(
         apiKey,
+        nextHistory,
+        mealItems,
         scheduledSteps,
         appliances,
         targetDinnerMin,
         projectedDinnerMin
       );
-      setAdvice(text);
+      setChatTurns((prev) => [...prev, { role: 'model', text: res.reply }]);
+      setProposedUpdates(res.recommendedUpdates);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get recovery advice');
+      setError(err instanceof Error ? err.message : 'Failed to evaluate schedule.');
     } finally {
       setLoading(false);
     }
@@ -138,18 +174,18 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'thanksgiving-schedule.json';
+    a.download = 'thymeline-schedule.json';
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <div className="modal-backdrop">
-      <div className="modal-card" style={{ maxWidth: 660 }}>
+      <div className="modal-card" style={{ maxWidth: 700 }}>
         <div className="modal-header">
           <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={18} color="var(--accent-terracotta)" />
-            Gemini Planner &amp; Schedule Import
+            <Sparkles size={18} color="var(--accent-sage)" />
+            Gemini Schedule Optimizer &amp; Import
           </h2>
           <button type="button" className="btn-icon" onClick={onClose} aria-label="Close">
             <X size={18} />
@@ -163,21 +199,22 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
             padding: '10px 20px',
             borderBottom: '1px solid var(--border-light)',
             background: 'var(--bg-canvas)',
+            flexWrap: 'wrap',
           }}
         >
+          <button
+            type="button"
+            className={`btn ${tab === 'evaluate' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setTab('evaluate')}
+          >
+            <Sliders size={14} /> Evaluate &amp; Adjust Schedule
+          </button>
           <button
             type="button"
             className={`btn ${tab === 'paste' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setTab('paste')}
           >
-            <Upload size={14} /> Copy Prompt / Paste JSON
-          </button>
-          <button
-            type="button"
-            className={`btn ${tab === 'api' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setTab('api')}
-          >
-            <Sparkles size={14} /> Gemini API Assistant
+            <Upload size={14} /> Import / Add Items
           </button>
           <button
             type="button"
@@ -206,48 +243,216 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
             </div>
           )}
 
-          {(tab === 'paste' || tab === 'api') && steps.length > 0 && (
+          {!apiKey.trim() && tab === 'evaluate' && (
             <div
               style={{
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--status-amber-soft)',
+                border: '1px solid var(--status-amber)',
+                fontSize: '0.8rem',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'space-between',
                 gap: 8,
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--bg-canvas)',
-                border: '1px solid var(--border-light)',
                 flexWrap: 'wrap',
               }}
             >
-              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--ink-secondary)' }}>
-                Mode:
-              </span>
+              <span>Configure your Gemini API key in Settings to evaluate and adjust schedules.</span>
               <button
                 type="button"
-                className={`btn ${effectiveMode === 'add' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '4px 10px', fontSize: '0.76rem' }}
-                onClick={() => handleModeChange('add')}
+                className="btn btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                onClick={() => {
+                  onClose();
+                  onOpenSettings();
+                }}
               >
-                Add to Schedule ({steps.length} existing)
-              </button>
-              <button
-                type="button"
-                className={`btn ${effectiveMode === 'replace' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '4px 10px', fontSize: '0.76rem' }}
-                onClick={() => handleModeChange('replace')}
-              >
-                Replace Entire Schedule
+                Open Settings
               </button>
             </div>
           )}
 
+          {tab === 'evaluate' && (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg-canvas)',
+                  border: '1px solid var(--border-light)',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <span>
+                    <strong>{scheduledSteps.length}</strong> step(s)
+                  </span>
+                  {unassignedCount > 0 && (
+                    <span className="pill delayed">{unassignedCount} unassigned</span>
+                  )}
+                  {delayedCount > 0 && (
+                    <span className="pill delayed">{delayedCount} delayed</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => runEvaluation()}
+                  disabled={loading || scheduledSteps.length === 0}
+                >
+                  <Sparkles size={14} />
+                  {loading
+                    ? 'Evaluating...'
+                    : chatTurns.length > 0
+                    ? 'Re-Evaluate Schedule'
+                    : 'Evaluate Current Schedule'}
+                </button>
+              </div>
+
+              {chatTurns.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {chatTurns.map((turn, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '9px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        background:
+                          turn.role === 'user' ? 'var(--accent-sage-soft)' : 'var(--bg-canvas)',
+                        border: '1px solid var(--border-light)',
+                        fontSize: '0.82rem',
+                        whiteSpace: 'pre-line',
+                      }}
+                    >
+                      <strong style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>
+                        {turn.role === 'user' ? 'YOU' : 'GEMINI'}
+                      </strong>
+                      <div style={{ marginTop: 2 }}>{turn.text}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {proposedUpdates.length > 0 && (
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--status-amber-soft)',
+                    border: '1px solid var(--status-amber)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    fontSize: '0.78rem',
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    Proposed Timeline Adjustments ({proposedUpdates.length}):
+                  </div>
+                  {proposedUpdates.map((u, idx) => (
+                    <div key={idx}>
+                      • <strong>{u.stepTitle}</strong>
+                      {u.applianceId !== undefined ? ` → ${u.applianceId || 'Unassigned'}` : ''}
+                      {u.durationMin !== undefined ? ` · ${u.durationMin}m` : ''}
+                      {u.temperature !== undefined ? ` · ${u.temperature}°F` : ''}
+                      {u.slotsRequired !== undefined ? ` · ${u.slotsRequired} slots` : ''} —{' '}
+                      <span style={{ color: 'var(--ink-secondary)' }}>{u.reason}</span>
+                    </div>
+                  ))}
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ marginTop: 4 }}
+                      disabled={appliedUpdates}
+                      onClick={() => {
+                        onApplyScheduleUpdates(proposedUpdates);
+                        setAppliedUpdates(true);
+                      }}
+                    >
+                      <Check size={14} />
+                      {appliedUpdates
+                        ? 'Applied Updates to Timeline!'
+                        : 'Apply Recommended Updates to Timeline'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={followUpInput}
+                  onChange={(e) => setFollowUpInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && followUpInput.trim() && !loading) {
+                      e.preventDefault();
+                      runEvaluation(followUpInput);
+                    }
+                  }}
+                  placeholder="Reply with corrections or preferences (e.g., Put stuffing in Second Oven)..."
+                  style={{ flex: 1, padding: '7px 10px', fontSize: '0.82rem' }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={loading || !followUpInput.trim()}
+                  onClick={() => runEvaluation(followUpInput)}
+                >
+                  <Send size={13} /> Reply
+                </button>
+              </div>
+            </>
+          )}
+
           {tab === 'paste' && (
             <>
+              {steps.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-canvas)',
+                    border: '1px solid var(--border-light)',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--ink-secondary)' }}>
+                    Mode:
+                  </span>
+                  <button
+                    type="button"
+                    className={`btn ${effectiveMode === 'add' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '4px 10px', fontSize: '0.76rem' }}
+                    onClick={() => handleModeChange('add')}
+                  >
+                    Add to Schedule ({steps.length} existing)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${effectiveMode === 'replace' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '4px 10px', fontSize: '0.76rem' }}
+                    onClick={() => handleModeChange('replace')}
+                  >
+                    Replace Entire Schedule
+                  </button>
+                </div>
+              )}
+
               <div className="form-field">
                 <label>
                   {effectiveMode === 'add'
                     ? `1. Describe new items to add (prompt includes your ${steps.length} existing steps)`
-                    : '1. Describe your Thanksgiving menu (optional, included in prompt)'}
+                    : '1. Describe your full meal menu'}
                 </label>
                 <textarea
                   rows={2}
@@ -260,24 +465,35 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                   }
                 />
               </div>
-              <div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <button type="button" className="btn btn-secondary" onClick={handleCopyPrompt}>
                   {copiedPrompt ? <Check size={14} /> : <Copy size={14} />}
                   {copiedPrompt ? 'Copied Gemini Prompt!' : 'Copy Prompt for Gemini Chat'}
                 </button>
-                <span style={{ fontSize: '0.76rem', color: 'var(--ink-muted)', marginLeft: 10 }}>
-                  Paste into Gemini, then paste the JSON output below.
-                </span>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleApiGenerate}
+                  disabled={loading}
+                >
+                  <Sparkles size={14} />
+                  {loading
+                    ? 'Generating...'
+                    : effectiveMode === 'add'
+                    ? 'Generate & Add via API'
+                    : 'Generate Schedule via API'}
+                </button>
               </div>
 
               <div className="form-field">
                 <label>
                   {effectiveMode === 'add'
-                    ? '2. Paste JSON from Gemini (adds to current steps & re-evaluates schedule)'
-                    : '2. Paste JSON from Gemini (replaces current steps)'}
+                    ? '2. Or paste JSON from Gemini (adds to current steps & re-evaluates schedule)'
+                    : '2. Or paste JSON from Gemini (replaces current steps)'}
                 </label>
                 <textarea
-                  rows={7}
+                  rows={6}
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
                   placeholder='[{"id": "garlic-bread", "title": "Bake Garlic Bread", ...}]'
@@ -287,100 +503,14 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
             </>
           )}
 
-          {tab === 'api' && (
-            <>
-              {!apiKey.trim() && (
-                <div
-                  style={{
-                    padding: '9px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--status-amber-soft)',
-                    border: '1px solid var(--status-amber)',
-                    fontSize: '0.8rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span>No Gemini API key configured yet.</span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                    onClick={() => {
-                      onClose();
-                      onOpenSettings();
-                    }}
-                  >
-                    Open Settings
-                  </button>
-                </div>
-              )}
-
-              <div className="form-field">
-                <label>
-                  {effectiveMode === 'add'
-                    ? `New Items to Add (Gemini sees your ${steps.length} existing steps & re-evaluates timing)`
-                    : 'Menu to Generate (creates full steps, dependencies & appliance temps)'}
-                </label>
-                <textarea
-                  rows={3}
-                  value={menuInput}
-                  onChange={(e) => setMenuInput(e.target.value)}
-                  placeholder={
-                    effectiveMode === 'add'
-                      ? 'e.g., garlic bread (400°F, 10m), roasted Brussels sprouts (400°F, 25m)'
-                      : SAMPLE_MENU_TEXT
-                  }
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={handleApiGenerate}
-                  disabled={loading}
-                >
-                  <Sparkles size={14} />
-                  {loading
-                    ? 'Working...'
-                    : effectiveMode === 'add'
-                    ? 'Add Steps with Gemini'
-                    : 'Generate Schedule with Gemini'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleGetAdvice}
-                  disabled={loading}
-                >
-                  {loading ? 'Analyzing...' : 'Get Slip Recovery Advice for Current Schedule'}
-                </button>
-              </div>
-
-              {advice && (
-                <div>
-                  <div className="section-label" style={{ marginTop: 8 }}>
-                    Gemini Recovery Suggestions
-                  </div>
-                  <div className="advice-box">{advice}</div>
-                </div>
-              )}
-            </>
-          )}
-
           {tab === 'export' && (
             <>
               <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--ink-secondary)' }}>
-                Save a local JSON backup of your meal steps to your Windows computer, or copy it to
-                share across devices.
+                Save a local JSON backup of your event steps, or copy it to share across devices.
               </p>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" className="btn btn-primary" onClick={handleDownloadJson}>
-                  <Download size={14} /> Download thanksgiving-schedule.json
+                  <Download size={14} /> Download thymeline-schedule.json
                 </button>
                 <button
                   type="button"

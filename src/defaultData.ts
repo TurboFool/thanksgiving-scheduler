@@ -4,6 +4,7 @@ export const DEFAULT_APPLIANCES: Appliance[] = [
   {
     id: 'oven',
     name: 'Main Oven',
+    category: 'Oven',
     capacity: 2,
     slotLabel: 'rack',
     hasTemperature: true,
@@ -13,6 +14,7 @@ export const DEFAULT_APPLIANCES: Appliance[] = [
   {
     id: 'stovetop',
     name: 'Stovetop',
+    category: 'Stovetop',
     capacity: 4,
     slotLabel: 'burner',
     hasTemperature: false,
@@ -22,6 +24,7 @@ export const DEFAULT_APPLIANCES: Appliance[] = [
   {
     id: 'airfryer',
     name: 'Air Fryer',
+    category: 'Air Fryer',
     capacity: 1,
     slotLabel: 'basket',
     hasTemperature: true,
@@ -31,6 +34,7 @@ export const DEFAULT_APPLIANCES: Appliance[] = [
   {
     id: 'microwave',
     name: 'Microwave',
+    category: 'Microwave',
     capacity: 1,
     slotLabel: 'plate',
     hasTemperature: false,
@@ -40,6 +44,7 @@ export const DEFAULT_APPLIANCES: Appliance[] = [
   {
     id: 'counter',
     name: 'Prep / Counter',
+    category: 'Counter',
     capacity: 12,
     slotLabel: 'spot',
     hasTemperature: false,
