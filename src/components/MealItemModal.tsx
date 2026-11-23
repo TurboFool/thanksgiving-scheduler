@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   X,
   Sparkles,
@@ -9,6 +9,9 @@ import {
   AlertTriangle,
   History,
   Edit3,
+  Download,
+  Scale,
+  Check,
 } from 'lucide-react';
 import type {
   Appliance,
@@ -18,8 +21,14 @@ import type {
   MealItem,
   MealStep,
 } from '../types';
-import { processMealItemWithGemini } from '../gemini';
+import {
+  fetchRecipeFromUrlWithGemini,
+  processMealItemWithGemini,
+  reviewScaledRecipeWithGemini,
+  type ScaledRecipeReviewResult,
+} from '../gemini';
 import { formatDuration } from '../scheduler';
+import { scaleIngredients, scaleServingsLabel } from '../recipeScaler';
 
 interface MealItemModalProps {
   item: MealItem | null;
@@ -46,6 +55,8 @@ const COURSES: DishCourse[] = [
   'Prep / Other',
 ];
 
+const SCALE_PRESETS = [0.5, 1, 1.5, 2, 3];
+
 export const MealItemModal: React.FC<MealItemModalProps> = ({
   item,
   appliances,
@@ -62,11 +73,15 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const [name, setName] = useState(item?.name ?? '');
   const [course, setCourse] = useState<DishCourse>(item?.course ?? 'Side');
   const [servings, setServings] = useState(item?.servings ?? '');
+  const [portionMultiplier, setPortionMultiplier] = useState<number>(item?.portionMultiplier ?? 1);
   const [dietaryText, setDietaryText] = useState((item?.dietaryTags ?? []).join(', '));
   const [sourceUrl, setSourceUrl] = useState(item?.sourceUrl ?? '');
+  const [ingredientsText, setIngredientsText] = useState((item?.ingredients ?? []).join('\n'));
+  const [recipeInstructions, setRecipeInstructions] = useState(item?.recipeInstructions ?? '');
   const [rawNotes, setRawNotes] = useState(item?.rawNotes ?? '');
   const [convertedNotes, setConvertedNotes] = useState(item?.convertedNotes ?? '');
   const [prepAheadNotes, setPrepAheadNotes] = useState(item?.prepAheadNotes ?? '');
+  const [scalingReviewText, setScalingReviewText] = useState(item?.scalingReview ?? '');
 
   const [finishMode, setFinishMode] = useState<FinishWindowMode>(
     item?.finishConstraint.mode ?? 'at_target'
@@ -86,8 +101,31 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   );
 
   const [aiLoading, setAiLoading] = useState(false);
+  const [urlLoading, setUrlLoading] = useState(false);
+  const [scaleLoading, setScaleLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [scaleReview, setScaleReview] = useState<ScaledRecipeReviewResult | null>(null);
+  const [appliedScaleUpdates, setAppliedScaleUpdates] = useState(false);
   const [savedToLibMsg, setSavedToLibMsg] = useState(false);
+
+  const baseIngredients = useMemo(
+    () =>
+      ingredientsText
+        .split('\n')
+        .map((l) => l.trimEnd())
+        .filter((l) => l.trim().length > 0),
+    [ingredientsText]
+  );
+
+  const scaledIngredients = useMemo(
+    () => scaleIngredients(baseIngredients, portionMultiplier),
+    [baseIngredients, portionMultiplier]
+  );
+
+  const scaledServings = useMemo(
+    () => scaleServingsLabel(servings, portionMultiplier),
+    [servings, portionMultiplier]
+  );
 
   const appendManualLog = (field: string, summary: string) => {
     if (!aiProcessedAt) return;
@@ -113,11 +151,15 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       name: name.trim() || 'Untitled Dish',
       course,
       servings: servings.trim() || undefined,
+      portionMultiplier,
       dietaryTags: tags.length > 0 ? tags : undefined,
       rawNotes: rawNotes.trim(),
       sourceUrl: sourceUrl.trim() || undefined,
+      ingredients: baseIngredients.length > 0 ? baseIngredients : undefined,
+      recipeInstructions: recipeInstructions.trim() || undefined,
       convertedNotes: convertedNotes.trim(),
       prepAheadNotes: prepAheadNotes.trim() || undefined,
+      scalingReview: scalingReviewText.trim() || undefined,
       finishConstraint: {
         mode: finishMode,
         offsetMin: finishMode === 'before_target' ? Math.max(0, Number(offsetMin) || 0) : undefined,
@@ -174,14 +216,26 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       setAiError('Configure your Gemini API key in Settings first.');
       return;
     }
-    if (!name.trim() && !rawNotes.trim()) {
-      setAiError('Enter a dish name or raw notes first.');
+    if (!name.trim() && !rawNotes.trim() && baseIngredients.length === 0 && !recipeInstructions.trim()) {
+      setAiError('Enter a dish name, recipe, or raw notes first.');
       return;
     }
     setAiLoading(true);
     try {
       const draft = buildCurrentItem();
-      const result = await processMealItemWithGemini(apiKey, draft, appliances, otherItems);
+      const combinedNotes = [
+        draft.rawNotes,
+        scaledIngredients.length > 0 ? `Ingredients (${portionMultiplier}X):\n${scaledIngredients.join('\n')}` : '',
+        draft.recipeInstructions ? `Instructions:\n${draft.recipeInstructions}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      const result = await processMealItemWithGemini(
+        apiKey,
+        { ...draft, rawNotes: combinedNotes },
+        appliances,
+        otherItems
+      );
       setConvertedNotes(result.convertedNotes);
       if (result.prepAheadNotes) setPrepAheadNotes(result.prepAheadNotes);
       setSteps(result.steps);
@@ -192,6 +246,85 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
     } finally {
       setAiLoading(false);
     }
+  };
+
+  const handlePullRecipeFromUrl = async () => {
+    setAiError(null);
+    if (!sourceUrl.trim()) {
+      setAiError('Enter a Source Recipe URL first.');
+      return;
+    }
+    if (!apiKey.trim()) {
+      setAiError('Configure your Gemini API key in Settings to pull recipes from a URL.');
+      return;
+    }
+    setUrlLoading(true);
+    try {
+      const fetched = await fetchRecipeFromUrlWithGemini(apiKey, sourceUrl);
+      if (!name.trim() && fetched.name) setName(fetched.name);
+      if (!servings.trim() && fetched.servings) setServings(fetched.servings);
+      if (fetched.ingredients.length > 0) {
+        setIngredientsText(fetched.ingredients.join('\n'));
+      }
+      if (fetched.recipeInstructions) {
+        setRecipeInstructions(fetched.recipeInstructions);
+      }
+      if (!prepAheadNotes.trim() && fetched.prepAheadNotes) {
+        setPrepAheadNotes(fetched.prepAheadNotes);
+      }
+    } catch (err) {
+      setAiError(
+        err instanceof Error
+          ? `Could not pull recipe from URL: ${err.message}`
+          : 'Could not pull recipe from URL.'
+      );
+    } finally {
+      setUrlLoading(false);
+    }
+  };
+
+  const handleReviewScaledRecipe = async () => {
+    setAiError(null);
+    setAppliedScaleUpdates(false);
+    if (!apiKey.trim()) {
+      setAiError('Configure your Gemini API key in Settings to review scaled proportions.');
+      return;
+    }
+    setScaleLoading(true);
+    try {
+      const review = await reviewScaledRecipeWithGemini(apiKey, buildCurrentItem(), appliances);
+      setScaleReview(review);
+      const summaryText = [review.reviewSummary, ...review.issues.map((i) => `• ${i}`)]
+        .filter(Boolean)
+        .join('\n');
+      setScalingReviewText(summaryText);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Failed to review scaled recipe.');
+    } finally {
+      setScaleLoading(false);
+    }
+  };
+
+  const handleApplySuggestedStepUpdates = () => {
+    if (!scaleReview || scaleReview.suggestedStepUpdates.length === 0) return;
+    setSteps((prev) =>
+      prev.map((s) => {
+        const match = scaleReview.suggestedStepUpdates.find(
+          (u) => (u.stepId && u.stepId === s.id) || u.title.toLowerCase() === s.title.toLowerCase()
+        );
+        if (!match) return s;
+        const nextDur = match.durationMin ?? s.durationMin;
+        return {
+          ...s,
+          durationMin: nextDur,
+          remainingSec: s.status === 'pending' ? nextDur * 60 : s.remainingSec,
+          slotsRequired: match.slotsRequired ?? s.slotsRequired,
+          temperature: match.temperature ?? s.temperature,
+        };
+      })
+    );
+    appendManualLog('scaling', `Applied AI scaling adjustments for ${portionMultiplier}X`);
+    setAppliedScaleUpdates(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -274,26 +407,185 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
 
               <div className="form-field full">
                 <label htmlFor="dish-url">Source Recipe URL (optional)</label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <input
                     id="dish-url"
                     type="url"
                     value={sourceUrl}
                     onChange={(e) => setSourceUrl(e.target.value)}
                     placeholder="https://..."
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, minWidth: 200 }}
                   />
                   {sourceUrl.trim() && (
-                    <a
-                      href={sourceUrl.trim()}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-secondary"
-                    >
-                      <ExternalLink size={13} /> Open
-                    </a>
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={handlePullRecipeFromUrl}
+                        disabled={urlLoading}
+                        title="Extract ingredients and instructions from this URL using Gemini"
+                      >
+                        <Download size={13} />
+                        {urlLoading ? 'Pulling...' : 'Pull Recipe'}
+                      </button>
+                      <a
+                        href={sourceUrl.trim()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary"
+                      >
+                        <ExternalLink size={13} /> Open
+                      </a>
+                    </>
                   )}
                 </div>
+              </div>
+
+              {/* Portion Scaling */}
+              <div className="form-field full">
+                <div className="section-label">
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <Scale size={12} /> Recipe Portion Scale
+                  </span>
+                  {scaledServings && (
+                    <span style={{ fontSize: '0.74rem', color: 'var(--accent-sage)', fontWeight: 600 }}>
+                      Yield: {scaledServings}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {SCALE_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className={`btn ${
+                        Math.abs(portionMultiplier - preset) < 0.01 ? 'btn-primary' : 'btn-secondary'
+                      }`}
+                      style={{ padding: '4px 10px', fontSize: '0.76rem' }}
+                      onClick={() => setPortionMultiplier(preset)}
+                    >
+                      {preset}X
+                    </button>
+                  ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
+                    <input
+                      type="number"
+                      aria-label="Custom portion multiplier"
+                      min={0.1}
+                      max={20}
+                      step={0.25}
+                      value={portionMultiplier}
+                      onChange={(e) =>
+                        setPortionMultiplier(Math.max(0.1, Number(e.target.value) || 1))
+                      }
+                      style={{ width: 68, padding: '4px 6px', fontSize: '0.78rem' }}
+                    />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--ink-secondary)' }}>X</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '0.76rem' }}
+                    onClick={handleReviewScaledRecipe}
+                    disabled={scaleLoading}
+                    title="Ask Gemini to check pan sizes, cook times, and ratios for this portion scale"
+                  >
+                    <Sparkles size={12} color="var(--accent-sage)" />
+                    {scaleLoading ? 'Reviewing...' : `Review ${portionMultiplier}X with Gemini`}
+                  </button>
+                </div>
+
+                {(scaleReview || scalingReviewText) && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: 10,
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--status-amber-soft)',
+                      border: '1px solid var(--status-amber)',
+                      fontSize: '0.78rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600 }}>
+                      Gemini Scaling Review ({portionMultiplier}X):
+                    </div>
+                    <div style={{ whiteSpace: 'pre-line', color: 'var(--ink-secondary)' }}>
+                      {scaleReview
+                        ? [scaleReview.reviewSummary, ...scaleReview.issues.map((i) => `• ${i}`)]
+                            .filter(Boolean)
+                            .join('\n')
+                        : scalingReviewText}
+                    </div>
+                    {scaleReview && scaleReview.suggestedStepUpdates.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                        <div style={{ fontWeight: 600 }}>Suggested Step Adjustments:</div>
+                        {scaleReview.suggestedStepUpdates.map((u, idx) => (
+                          <div key={idx} style={{ fontSize: '0.75rem' }}>
+                            • <strong>{u.title}</strong>:{' '}
+                            {u.durationMin !== undefined ? `${u.durationMin}m ` : ''}
+                            {u.slotsRequired !== undefined ? `(${u.slotsRequired} slots) ` : ''}—{' '}
+                            {u.reason}
+                          </div>
+                        ))}
+                        <div>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            style={{ padding: '4px 10px', fontSize: '0.74rem', marginTop: 4 }}
+                            onClick={handleApplySuggestedStepUpdates}
+                            disabled={appliedScaleUpdates}
+                          >
+                            <Check size={12} />
+                            {appliedScaleUpdates
+                              ? 'Applied to Steps!'
+                              : 'Apply Suggested Step Updates'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Recipe Ingredients (1X base + live scaled preview) */}
+              <div className={Math.abs(portionMultiplier - 1) > 0.01 ? 'form-field' : 'form-field full'}>
+                <label htmlFor="dish-ingredients">
+                  Recipe Ingredients (1X base, one per line)
+                </label>
+                <textarea
+                  id="dish-ingredients"
+                  rows={4}
+                  value={ingredientsText}
+                  onChange={(e) => setIngredientsText(e.target.value)}
+                  placeholder={'2 tbsp olive oil\n1 1/2 lb green beans, trimmed\n1/2 cup chicken broth'}
+                />
+              </div>
+
+              {Math.abs(portionMultiplier - 1) > 0.01 && (
+                <div className="form-field">
+                  <label>Scaled Ingredients ({portionMultiplier}X auto-adjusted)</label>
+                  <textarea
+                    readOnly
+                    rows={4}
+                    value={scaledIngredients.join('\n')}
+                    style={{ background: 'var(--accent-sage-soft)', color: 'var(--ink-primary)' }}
+                  />
+                </div>
+              )}
+
+              <div className="form-field full">
+                <label htmlFor="dish-instructions">Recipe Instructions (1X base method)</label>
+                <textarea
+                  id="dish-instructions"
+                  rows={4}
+                  value={recipeInstructions}
+                  onChange={(e) => setRecipeInstructions(e.target.value)}
+                  placeholder="Full recipe steps/method pulled from URL or pasted here..."
+                />
               </div>
 
               {/* Finish Window Constraint */}

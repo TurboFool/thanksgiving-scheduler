@@ -88,11 +88,15 @@ export interface MealItem {
   name: string;
   course: DishCourse;
   servings?: string;
+  portionMultiplier?: number;
   dietaryTags?: string[];
   rawNotes: string;
   sourceUrl?: string;
+  ingredients?: string[];
+  recipeInstructions?: string;
   convertedNotes: string;
   prepAheadNotes?: string;
+  scalingReview?: string;
   finishConstraint: FinishConstraint;
   steps: MealStep[];
   aiProcessedAt?: number;

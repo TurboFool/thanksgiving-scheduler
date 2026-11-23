@@ -1,5 +1,6 @@
 import type { Appliance, MealItem, MealStep, ScheduledStep } from './types';
 import { formatTimeMin } from './scheduler';
+import { scaleIngredients } from './recipeScaler';
 
 export function buildGeminiChatPrompt(
   appliances: Appliance[],
@@ -406,4 +407,166 @@ Review the full set of dishes and any recent manual edits. Give 3–4 concise, a
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.35 },
   });
+}
+
+function extractJsonObject<T>(rawText: string): T {
+  let cleaned = rawText.trim();
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  }
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  }
+  return JSON.parse(cleaned) as T;
+}
+
+export interface FetchedRecipeResult {
+  name?: string;
+  servings?: string;
+  ingredients: string[];
+  recipeInstructions: string;
+  prepAheadNotes?: string;
+}
+
+export async function fetchRecipeFromUrlWithGemini(
+  apiKey: string,
+  url: string
+): Promise<FetchedRecipeResult> {
+  const prompt = `Read the recipe at this URL and extract its contents cleanly:
+${url.trim()}
+
+Return ONLY a valid JSON object (no commentary) with this exact shape:
+{
+  "name": "Dish title",
+  "servings": "e.g., 8 servings",
+  "ingredients": [
+    "2 tbsp olive oil",
+    "1 1/2 lb green beans, trimmed"
+  ],
+  "recipeInstructions": "Concise numbered or paragraph instructions...",
+  "prepAheadNotes": "Optional make-ahead note if mentioned"
+}
+
+If the page is blocked or unreadable, return {"error": "Reason why it could not be read"}.`;
+
+  const rawText = await callGeminiWithFallback(apiKey, {
+    contents: [{ parts: [{ text: prompt }] }],
+    tools: [{ url_context: {} }],
+    generationConfig: { temperature: 0.1 },
+  });
+
+  const parsed = extractJsonObject<FetchedRecipeResult & { error?: string }>(rawText);
+  if (parsed.error) {
+    throw new Error(parsed.error);
+  }
+
+  return {
+    name: parsed.name ? String(parsed.name).trim() : undefined,
+    servings: parsed.servings ? String(parsed.servings).trim() : undefined,
+    ingredients: Array.isArray(parsed.ingredients)
+      ? parsed.ingredients.map((i) => String(i).trim()).filter(Boolean)
+      : [],
+    recipeInstructions: String(parsed.recipeInstructions ?? '').trim(),
+    prepAheadNotes: parsed.prepAheadNotes ? String(parsed.prepAheadNotes).trim() : undefined,
+  };
+}
+
+export interface SuggestedStepUpdate {
+  stepId?: string;
+  title: string;
+  durationMin?: number;
+  slotsRequired?: number;
+  temperature?: number;
+  reason: string;
+}
+
+export interface ScaledRecipeReviewResult {
+  reviewSummary: string;
+  issues: string[];
+  suggestedStepUpdates: SuggestedStepUpdate[];
+}
+
+export async function reviewScaledRecipeWithGemini(
+  apiKey: string,
+  item: MealItem,
+  appliances: Appliance[]
+): Promise<ScaledRecipeReviewResult> {
+  const multiplier = item.portionMultiplier ?? 1;
+  const baseIngredients = item.ingredients ?? [];
+  const scaledIngredients = scaleIngredients(baseIngredients, multiplier);
+
+  const appSummary = appliances
+    .map((a) => `- id: "${a.id}", name: "${a.name}", capacity: ${a.capacity} ${a.slotLabel}(s)`)
+    .join('\n');
+
+  const stepsSummary = item.steps
+    .map(
+      (s) =>
+        `- stepId: "${s.id}", title: "${s.title}", durationMin: ${s.durationMin}, applianceId: "${s.applianceId}", slotsRequired: ${s.slotsRequired}${
+          s.temperature ? `, temperature: ${s.temperature}°F` : ''
+        }`
+    )
+    .join('\n');
+
+  const prompt = `You are a culinary expert reviewing a scaled recipe for potential issues.
+
+Dish: ${item.name} (${item.course})
+Portion Multiplier: ${multiplier}X (from 1X base${item.servings ? `, base servings: ${item.servings}` : ''})
+
+Base 1X Ingredients:
+${baseIngredients.length > 0 ? baseIngredients.join('\n') : '(none listed)'}
+
+Scaled ${multiplier}X Ingredients:
+${scaledIngredients.length > 0 ? scaledIngredients.join('\n') : '(none listed)'}
+
+Recipe Instructions (1X):
+${item.recipeInstructions || item.rawNotes || '(none)'}
+
+Current Scheduled Steps:
+${stepsSummary || '(none)'}
+
+Available Appliances:
+${appSummary}
+
+Check for any culinary, equipment, or timing issues caused by scaling to ${multiplier}X (e.g., baking pan size/overflow needing 2 pans and extra oven racks, cook/bake time adjustments, seasoning/leavening/alcohol/thickener ratios that shouldn't scale linearly, or resting time changes).
+
+Return ONLY a valid JSON object:
+{
+  "reviewSummary": "1-2 sentence overall assessment",
+  "issues": [
+    "Specific issue or tip #1",
+    "Specific issue or tip #2"
+  ],
+  "suggestedStepUpdates": [
+    {
+      "stepId": "existing-step-id-if-updating",
+      "title": "Step title",
+      "durationMin": 45,
+      "slotsRequired": 2,
+      "temperature": 350,
+      "reason": "Why this step needs adjustment at ${multiplier}X"
+    }
+  ]
+}
+If no step timing/slot changes are needed, return "suggestedStepUpdates": [].`;
+
+  const rawText = await callGeminiWithFallback(apiKey, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.25,
+    },
+  });
+
+  const parsed = extractJsonObject<ScaledRecipeReviewResult>(rawText);
+  return {
+    reviewSummary: String(parsed.reviewSummary ?? '').trim(),
+    issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [],
+    suggestedStepUpdates: Array.isArray(parsed.suggestedStepUpdates)
+      ? parsed.suggestedStepUpdates
+      : [],
+  };
 }
