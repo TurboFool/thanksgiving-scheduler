@@ -1,7 +1,11 @@
 import type { Appliance, MealStep, ScheduledStep } from './types';
 import { formatTimeMin } from './scheduler';
 
-export function buildGeminiChatPrompt(appliances: Appliance[], menuText: string): string {
+export function buildGeminiChatPrompt(
+  appliances: Appliance[],
+  menuText: string,
+  existingSteps?: MealStep[]
+): string {
   const appSummary = appliances
     .map(
       (a) =>
@@ -11,12 +15,28 @@ export function buildGeminiChatPrompt(appliances: Appliance[], menuText: string)
     )
     .join('\n');
 
-  return `You are a Thanksgiving culinary scheduling assistant. Convert the following menu into a structured JSON array of cooking steps.
+  const isAdding = Boolean(existingSteps && existingSteps.length > 0);
+  const existingSummary = isAdding
+    ? `\nExisting steps already on the schedule (do NOT repeat these; you may reference their IDs in "dependencies" or "readyBeforeIds" if a new step relies on them):\n${existingSteps!
+        .map(
+          (s) =>
+            `- id: "${s.id}", title: "${s.title}", dish: "${s.dish}", applianceId: "${s.applianceId}", durationMin: ${s.durationMin}${
+              s.temperature !== undefined ? `, temperature: ${s.temperature}°F` : ''
+            }, status: ${s.status}`
+        )
+        .join('\n')}\n`
+    : '';
+
+  return `You are a Thanksgiving culinary scheduling assistant. ${
+    isAdding
+      ? 'Generate ONLY the NEW cooking steps for the additional items below so they can be added to the existing schedule.'
+      : 'Convert the following menu into a structured JSON array of cooking steps.'
+  }
 
 Available appliances:
 ${appSummary}
-
-Menu / Notes:
+${existingSummary}
+${isAdding ? 'New items / notes to add:' : 'Menu / Notes:'}
 ${menuText || '(Insert your Thanksgiving dishes, turkey weight, sides, and any special timing notes here)'}
 
 Return ONLY valid JSON matching this TypeScript type (an array of objects):
@@ -40,8 +60,11 @@ Rules:
 1. Use only the appliance IDs listed above.
 2. Omit "temperature" (or set null) for appliances where hasTemperature is false.
 3. Use "dependencies" for steps that must finish BEFORE this step can start (e.g. prep before cook, turkey roast before rest/carve and gravy).
-4. Set "slotsRequired" realistically (e.g. whole turkey uses 2 oven racks; a casserole uses 1 rack).
-5. Return ONLY the JSON array.`;
+4. Set "slotsRequired" realistically (e.g. whole turkey uses 2 oven racks; a casserole uses 1 rack).${
+    isAdding
+      ? '\n5. Return ONLY the NEW steps (do NOT include existing steps), using unique kebab-case IDs that do not collide with existing IDs.\n6. Return ONLY the JSON array.'
+      : '\n5. Return ONLY the JSON array.'
+  }`;
 }
 
 export function parseImportedSteps(rawInput: string, appliances: Appliance[]): MealStep[] {
@@ -131,12 +154,43 @@ async function callGeminiWithFallback(
   throw new Error(lastError);
 }
 
+export function mergeImportedSteps(
+  existing: MealStep[],
+  incoming: MealStep[]
+): MealStep[] {
+  const usedIds = new Set(existing.map((s) => s.id));
+  const idRemap = new Map<string, string>();
+
+  for (const step of incoming) {
+    let nextId = step.id;
+    if (usedIds.has(nextId)) {
+      let suffix = 2;
+      while (usedIds.has(`${step.id}-${suffix}`)) {
+        suffix += 1;
+      }
+      nextId = `${step.id}-${suffix}`;
+      idRemap.set(step.id, nextId);
+    }
+    usedIds.add(nextId);
+  }
+
+  const normalizedIncoming = incoming.map((step) => ({
+    ...step,
+    id: idRemap.get(step.id) ?? step.id,
+    dependencies: step.dependencies.map((d) => idRemap.get(d) ?? d),
+    readyBeforeIds: step.readyBeforeIds.map((d) => idRemap.get(d) ?? d),
+  }));
+
+  return [...existing, ...normalizedIncoming];
+}
+
 export async function generateScheduleWithGemini(
   apiKey: string,
   menuText: string,
-  appliances: Appliance[]
+  appliances: Appliance[],
+  existingSteps?: MealStep[]
 ): Promise<MealStep[]> {
-  const prompt = buildGeminiChatPrompt(appliances, menuText);
+  const prompt = buildGeminiChatPrompt(appliances, menuText, existingSteps);
   const text = await callGeminiWithFallback(apiKey, {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {

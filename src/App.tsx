@@ -22,6 +22,7 @@ import type { Appliance, AppSettings, MealStep, ScheduledStep, ScheduleSnapshot 
 import { DEFAULT_APPLIANCES, DEFAULT_STEPS } from './defaultData';
 import { computeSchedule, formatCountdownSec, formatDuration, formatTimeMin } from './scheduler';
 import { soundManager } from './audio';
+import { mergeImportedSteps } from './gemini';
 import { GanttTimeline } from './components/GanttTimeline';
 import { StepModal } from './components/StepModal';
 import { ApplianceModal } from './components/ApplianceModal';
@@ -820,9 +821,16 @@ export function App() {
           projectedDinnerMin={schedule.projectedDinnerMin}
           apiKey={settings.geminiApiKey}
           onSaveApiKey={(key) => setSettings((s) => ({ ...s, geminiApiKey: key }))}
-          onImportSteps={(imported) => {
-            pushUndo('Import schedule');
-            setSteps(imported);
+          onImportSteps={(imported, mode) => {
+            if (mode === 'add') {
+              pushUndo(`Add ${imported.length} step${imported.length === 1 ? '' : 's'} via Gemini`);
+              setSteps((prev) => mergeImportedSteps(prev, imported));
+            } else {
+              pushUndo('Import schedule');
+              setSteps(imported);
+              setSelectedStepId(null);
+              setMutedAlarms(new Set());
+            }
           }}
           onClose={() => setShowGeminiModal(false)}
         />

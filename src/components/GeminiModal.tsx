@@ -16,9 +16,12 @@ interface GeminiModalProps {
   projectedDinnerMin: number;
   apiKey: string;
   onSaveApiKey: (key: string) => void;
-  onImportSteps: (steps: MealStep[]) => void;
+  onImportSteps: (steps: MealStep[], mode: 'add' | 'replace') => void;
   onClose: () => void;
 }
+
+const SAMPLE_MENU_TEXT =
+  '14lb roast turkey, pan drippings gravy, herb stuffing (350°F), green bean casserole (350°F), mashed potatoes, cranberry sauce, dinner rolls, pumpkin pie reheat';
 
 export const GeminiModal: React.FC<GeminiModalProps> = ({
   appliances,
@@ -32,9 +35,8 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   onClose,
 }) => {
   const [tab, setTab] = useState<'paste' | 'api' | 'export'>('paste');
-  const [menuInput, setMenuInput] = useState(
-    '14lb roast turkey, pan drippings gravy, herb stuffing (350°F), green bean casserole (350°F), mashed potatoes, cranberry sauce, dinner rolls, pumpkin pie reheat'
-  );
+  const [mode, setMode] = useState<'add' | 'replace'>(steps.length > 0 ? 'add' : 'replace');
+  const [menuInput, setMenuInput] = useState(steps.length > 0 ? '' : SAMPLE_MENU_TEXT);
   const [jsonInput, setJsonInput] = useState('');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedExport, setCopiedExport] = useState(false);
@@ -43,8 +45,23 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   const [advice, setAdvice] = useState<string | null>(null);
   const [localKey, setLocalKey] = useState(apiKey);
 
+  const effectiveMode = steps.length === 0 ? 'replace' : mode;
+
+  const handleModeChange = (nextMode: 'add' | 'replace') => {
+    setMode(nextMode);
+    if (nextMode === 'replace' && !menuInput.trim()) {
+      setMenuInput(SAMPLE_MENU_TEXT);
+    } else if (nextMode === 'add' && menuInput === SAMPLE_MENU_TEXT) {
+      setMenuInput('');
+    }
+  };
+
   const handleCopyPrompt = () => {
-    const prompt = buildGeminiChatPrompt(appliances, menuInput);
+    const prompt = buildGeminiChatPrompt(
+      appliances,
+      menuInput,
+      effectiveMode === 'add' ? steps : undefined
+    );
     navigator.clipboard.writeText(prompt);
     setCopiedPrompt(true);
     setTimeout(() => setCopiedPrompt(false), 2000);
@@ -54,7 +71,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
     setError(null);
     try {
       const parsed = parseImportedSteps(jsonInput, appliances);
-      onImportSteps(parsed);
+      onImportSteps(parsed, effectiveMode);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid JSON');
@@ -67,11 +84,24 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
       setError('Please enter your Gemini API key first.');
       return;
     }
+    if (!menuInput.trim()) {
+      setError(
+        effectiveMode === 'add'
+          ? 'Please describe the new item(s) you want to add.'
+          : 'Please describe your menu first.'
+      );
+      return;
+    }
     onSaveApiKey(localKey.trim());
     setLoading(true);
     try {
-      const generated = await generateScheduleWithGemini(localKey, menuInput, appliances);
-      onImportSteps(generated);
+      const generated = await generateScheduleWithGemini(
+        localKey,
+        menuInput,
+        appliances,
+        effectiveMode === 'add' ? steps : undefined
+      );
+      onImportSteps(generated, effectiveMode);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to call Gemini API');
@@ -179,14 +209,58 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
             </div>
           )}
 
+          {(tab === 'paste' || tab === 'api') && steps.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-canvas)',
+                border: '1px solid var(--border-light)',
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--ink-secondary)' }}>
+                Mode:
+              </span>
+              <button
+                type="button"
+                className={`btn ${effectiveMode === 'add' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '4px 10px', fontSize: '0.76rem' }}
+                onClick={() => handleModeChange('add')}
+              >
+                Add to Schedule ({steps.length} existing)
+              </button>
+              <button
+                type="button"
+                className={`btn ${effectiveMode === 'replace' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '4px 10px', fontSize: '0.76rem' }}
+                onClick={() => handleModeChange('replace')}
+              >
+                Replace Entire Schedule
+              </button>
+            </div>
+          )}
+
           {tab === 'paste' && (
             <>
               <div className="form-field">
-                <label>1. Describe your Thanksgiving menu (optional, included in prompt)</label>
+                <label>
+                  {effectiveMode === 'add'
+                    ? `1. Describe new items to add (prompt includes your ${steps.length} existing steps)`
+                    : '1. Describe your Thanksgiving menu (optional, included in prompt)'}
+                </label>
                 <textarea
                   rows={2}
                   value={menuInput}
                   onChange={(e) => setMenuInput(e.target.value)}
+                  placeholder={
+                    effectiveMode === 'add'
+                      ? 'e.g., garlic bread (400°F, 10m), roasted Brussels sprouts (400°F, 25m)'
+                      : SAMPLE_MENU_TEXT
+                  }
                 />
               </div>
               <div>
@@ -200,12 +274,16 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
               </div>
 
               <div className="form-field">
-                <label>2. Paste JSON from Gemini (replaces current steps)</label>
+                <label>
+                  {effectiveMode === 'add'
+                    ? '2. Paste JSON from Gemini (adds to current steps & re-evaluates schedule)'
+                    : '2. Paste JSON from Gemini (replaces current steps)'}
+                </label>
                 <textarea
                   rows={7}
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
-                  placeholder='[{"id": "turkey-roast", "title": "Roast Turkey", ...}]'
+                  placeholder='[{"id": "garlic-bread", "title": "Bake Garlic Bread", ...}]'
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
               </div>
@@ -225,11 +303,20 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
               </div>
 
               <div className="form-field">
-                <label>Menu to Generate (creates full steps, dependencies &amp; appliance temps)</label>
+                <label>
+                  {effectiveMode === 'add'
+                    ? `New Items to Add (Gemini sees your ${steps.length} existing steps & re-evaluates timing)`
+                    : 'Menu to Generate (creates full steps, dependencies & appliance temps)'}
+                </label>
                 <textarea
                   rows={3}
                   value={menuInput}
                   onChange={(e) => setMenuInput(e.target.value)}
+                  placeholder={
+                    effectiveMode === 'add'
+                      ? 'e.g., garlic bread (400°F, 10m), roasted Brussels sprouts (400°F, 25m)'
+                      : SAMPLE_MENU_TEXT
+                  }
                 />
               </div>
 
@@ -241,7 +328,11 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                   disabled={loading}
                 >
                   <Sparkles size={14} />
-                  {loading ? 'Working...' : 'Generate Schedule with Gemini'}
+                  {loading
+                    ? 'Working...'
+                    : effectiveMode === 'add'
+                    ? 'Add Steps with Gemini'
+                    : 'Generate Schedule with Gemini'}
                 </button>
                 <button
                   type="button"
@@ -319,7 +410,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                 onClick={handleParsePaste}
                 disabled={!jsonInput.trim()}
               >
-                Import Steps
+                {effectiveMode === 'add' ? 'Add Steps to Schedule' : 'Import Steps'}
               </button>
             )}
           </div>
