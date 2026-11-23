@@ -366,8 +366,12 @@ export function computeSchedule(
       });
     } else {
       const s = step.actualStartMin ?? nowMin;
+      const plannedDur = Math.max(1, step.durationMin + (step.addedMin || 0));
       const remMin = Math.max(1, Math.ceil(step.remainingSec / 60));
-      const e = Math.max(s + 1, nowMin + remMin);
+      const e =
+        step.requiresTimer === false
+          ? Math.max(s + plannedDur, nowMin + 1)
+          : Math.max(s + 1, nowMin + remMin);
       const check = findValidPlacement(s, e, step.slotsRequired, step.temperature, app, appIntervals);
       liveStart.set(id, s);
       liveEnd.set(id, e);

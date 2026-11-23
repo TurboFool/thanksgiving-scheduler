@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.5.0] — 2026-11-22
+
+### Added
+- **Start-Time Alerts & Announcements**: Pending steps now trigger a distinct ascending chime (`playStartChime`), optional voice announcement (`"Time to start ..."`), and toast notification when their scheduled start time arrives in **Execution Mode** (or during custom Sim rehearsal).
+- **Timed Cooking vs. Start-Alert Prep (`requiresTimer`)**: Added a **Needs Countdown Timer** toggle in `StepModal`. Untimed prep steps (e.g., peeling apples) alert you when to start and show **Begin** / **Done** controls without running a countdown alarm, while still cascading downstream steps if they run long or finish late.
+- **Flexible Overtime & Post-Completion Extension**: Added `+2m` and `+15m` alongside `+5m` and `+10m` on active/overtime timer cards, plus a `+5m` reopen-and-extend button on completed dish steps so you can add more time even after an alarm has gone off or a step was marked Done—automatically shifting all dependent steps.
+
+---
+
 ## [2.4.1] — 2026-11-22
 
 ### Changed

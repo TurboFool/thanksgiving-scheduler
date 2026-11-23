@@ -123,6 +123,7 @@ export function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const warned5MinRef = useRef<Set<string>>(new Set());
+  const dueAlertedRef = useRef<Set<string>>(new Set());
   const alarmTickRef = useRef<number>(0);
   const toastTimerRef = useRef<number | null>(null);
 
@@ -228,7 +229,7 @@ export function App() {
         const nextItems = ev.mealItems.map((item) => {
           let itemChanged = false;
           const nextSteps = item.steps.map((s) => {
-            if (s.status !== 'running') return s;
+            if (s.status !== 'running' || s.requiresTimer === false) return s;
             changed = true;
             itemChanged = true;
             const nextSec = s.remainingSec - 1;
@@ -258,7 +259,11 @@ export function App() {
 
         if (alarmTickRef.current % 4 === 0 && settings.soundEnabled) {
           const hasRinging = newlyFinishedOrWarned.some(
-            (s) => s.status === 'running' && s.remainingSec <= 0 && !mutedAlarms.has(s.id)
+            (s) =>
+              s.status === 'running' &&
+              s.requiresTimer !== false &&
+              s.remainingSec <= 0 &&
+              !mutedAlarms.has(s.id)
           );
           if (hasRinging) {
             soundManager.playAlarmBell();
@@ -315,6 +320,37 @@ export function App() {
     [steps, appliances, targetDinnerMin, isAutoSim, rawNowMin]
   );
   const nowMin = isAutoSim ? schedule.suggestedStartMin : rawNowMin;
+
+  // Alert / announce when a pending step reaches its scheduled start time (in Execution Mode or custom Sim rehearsal)
+  useEffect(() => {
+    if (isAutoSim) return;
+    const dueNow = schedule.steps.filter(
+      (s) => s.status === 'pending' && nowMin >= s.startMin && !dueAlertedRef.current.has(s.id)
+    );
+    if (dueNow.length === 0) return;
+
+    dueNow.forEach((s) => dueAlertedRef.current.add(s.id));
+    const first = dueNow[0];
+    if (settings.soundEnabled) soundManager.playStartChime();
+    if (settings.voiceEnabled) {
+      const msg =
+        dueNow.length === 1
+          ? `Time to start ${first.title}${first.dish ? ` for ${first.dish}` : ''}`
+          : `Time to start ${first.title} and ${dueNow.length - 1} more step${dueNow.length > 2 ? 's' : ''}`;
+      soundManager.speak(msg);
+    }
+    showToast(
+      dueNow.length === 1
+        ? `Time to start: ${first.title}`
+        : `Time to start: ${first.title} (+${dueNow.length - 1} more)`
+    );
+  }, [
+    schedule.steps,
+    nowMin,
+    isAutoSim,
+    settings.soundEnabled,
+    settings.voiceEnabled,
+  ]);
 
   const applianceMap = useMemo(() => new Map(appliances.map((a) => [a.id, a])), [appliances]);
 
@@ -437,6 +473,29 @@ export function App() {
           }
         : s
     );
+  };
+
+  const reopenAndExtendStep = (id: string, extraMin: number) => {
+    soundManager.unlock();
+    pushUndo(`Needs +${extraMin}m more`);
+    setMutedAlarms((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    mutateEventSteps((s) =>
+      s.id === id
+        ? {
+            ...s,
+            status: 'running',
+            actualStartMin: s.actualStartMin ?? Math.max(0, nowMin - s.durationMin),
+            actualEndMin: undefined,
+            remainingSec: extraMin * 60,
+            addedMin: (s.addedMin || 0) + extraMin,
+          }
+        : s
+    );
+    showToast(`Added +${extraMin}m timer`);
   };
 
   const handleSaveStep = (saved: MealStep) => {
@@ -1527,7 +1586,34 @@ export function App() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        {s.status === 'pending' && (
+                        {s.status === 'pending' && s.requiresTimer === false && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startStep(s.id);
+                              }}
+                              title="Mark prep in progress (no countdown alarm)"
+                            >
+                              Begin
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                completeStep(s.id);
+                              }}
+                            >
+                              <Check size={11} /> Done
+                            </button>
+                          </>
+                        )}
+                        {s.status === 'pending' && s.requiresTimer !== false && (
                           <button
                             type="button"
                             className="btn btn-primary"
@@ -1554,17 +1640,31 @@ export function App() {
                           </button>
                         )}
                         {s.status === 'done' && (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              reopenStep(s.id);
-                            }}
-                          >
-                            Reopen
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 7px', fontSize: '0.72rem' }}
+                              title="Needs more time — reopen with +5m timer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reopenAndExtendStep(s.id, 5);
+                              }}
+                            >
+                              +5m
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reopenStep(s.id);
+                              }}
+                            >
+                              Reopen
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1595,7 +1695,8 @@ export function App() {
                   ) : (
                     activeSteps.map((s) => {
                       const app = applianceMap.get(s.resolvedApplianceId || s.applianceId);
-                      const isRinging = s.status === 'running' && s.remainingSec <= 0;
+                      const isUntimed = s.requiresTimer === false;
+                      const isRinging = !isUntimed && s.status === 'running' && s.remainingSec <= 0;
                       const totalPlannedSec = Math.max(60, (s.durationMin + s.addedMin) * 60);
                       const pct = Math.max(
                         0,
@@ -1609,6 +1710,11 @@ export function App() {
                               <div className="timer-title">{s.title}</div>
                               <div className="timer-meta">
                                 <span>{app?.name}</span>
+                                {isUntimed && (
+                                  <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
+                                    Prep · No Timer
+                                  </span>
+                                )}
                                 {s.temperature !== undefined && (
                                   <span className="pill temp">
                                     <Flame size={10} /> {s.temperature}°F
@@ -1630,18 +1736,33 @@ export function App() {
                             )}
                           </div>
 
-                          <div className="timer-readout">
-                            {formatCountdownSec(s.remainingSec)}
-                            {isRinging && (
-                              <span style={{ fontSize: '0.78rem', marginLeft: 8, fontWeight: 600 }}>
-                                OVERTIME
-                              </span>
-                            )}
-                          </div>
+                          {isUntimed ? (
+                            <div
+                              style={{
+                                fontSize: '0.8rem',
+                                color: 'var(--ink-secondary)',
+                                margin: '6px 0 10px',
+                              }}
+                            >
+                              In progress · Est. {formatDuration(s.durationMin)} (finish by{' '}
+                              <span className="mono">{formatTimeMin(s.endMin)}</span>)
+                            </div>
+                          ) : (
+                            <>
+                              <div className="timer-readout">
+                                {formatCountdownSec(s.remainingSec)}
+                                {isRinging && (
+                                  <span style={{ fontSize: '0.78rem', marginLeft: 8, fontWeight: 600 }}>
+                                    OVERTIME
+                                  </span>
+                                )}
+                              </div>
 
-                          <div className="progress-track">
-                            <div className="progress-fill" style={{ width: `${pct}%` }} />
-                          </div>
+                              <div className="progress-track">
+                                <div className="progress-fill" style={{ width: `${pct}%` }} />
+                              </div>
+                            </>
+                          )}
 
                           <div className="timer-controls">
                             <button
@@ -1651,36 +1772,54 @@ export function App() {
                             >
                               <Check size={14} /> Done
                             </button>
-                            <button
-                              type="button"
-                              className="btn-timer"
-                              onClick={() => extendStep(s.id, 5)}
-                            >
-                              +5m
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-timer"
-                              onClick={() => extendStep(s.id, 10)}
-                            >
-                              +10m
-                            </button>
-                            {s.status === 'running' ? (
-                              <button
-                                type="button"
-                                className="btn-timer"
-                                onClick={() => pauseStep(s.id)}
-                              >
-                                <Pause size={13} />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="btn-timer"
-                                onClick={() => startStep(s.id)}
-                              >
-                                <Play size={13} />
-                              </button>
+                            {!isUntimed && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn-timer"
+                                  onClick={() => extendStep(s.id, 2)}
+                                >
+                                  +2m
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-timer"
+                                  onClick={() => extendStep(s.id, 5)}
+                                >
+                                  +5m
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-timer"
+                                  onClick={() => extendStep(s.id, 10)}
+                                >
+                                  +10m
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-timer"
+                                  onClick={() => extendStep(s.id, 15)}
+                                >
+                                  +15m
+                                </button>
+                                {s.status === 'running' ? (
+                                  <button
+                                    type="button"
+                                    className="btn-timer"
+                                    onClick={() => pauseStep(s.id)}
+                                  >
+                                    <Pause size={13} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn-timer"
+                                    onClick={() => startStep(s.id)}
+                                  >
+                                    <Play size={13} />
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -1718,6 +1857,11 @@ export function App() {
                             {s.temperature !== undefined && (
                               <span className="pill temp">{s.temperature}°F</span>
                             )}
+                            {s.requiresTimer === false && (
+                              <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
+                                Start Alert
+                              </span>
+                            )}
                             {s.isDelayed && <span className="pill delayed">+{s.delayMin}m</span>}
                           </div>
                         </div>
@@ -1733,17 +1877,45 @@ export function App() {
                               DUE
                             </span>
                           )}
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            style={{ padding: '5px 9px', fontSize: '0.75rem' }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startStep(s.id);
-                            }}
-                          >
-                            <Play size={12} /> Start
-                          </button>
+                          {s.requiresTimer === false ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{ padding: '5px 8px', fontSize: '0.73rem' }}
+                                title="Mark prep in progress (no countdown timer)"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startStep(s.id);
+                                }}
+                              >
+                                Begin
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ padding: '5px 8px', fontSize: '0.73rem' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  completeStep(s.id);
+                                }}
+                              >
+                                <Check size={12} /> Done
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              style={{ padding: '5px 9px', fontSize: '0.75rem' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startStep(s.id);
+                              }}
+                            >
+                              <Play size={12} /> Start
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

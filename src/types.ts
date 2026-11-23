@@ -35,6 +35,8 @@ export interface MealStep {
   readyBeforeIds: string[];
   /** Whether this step must finish by target dinner time (default true) */
   mustFinishByDinner: boolean;
+  /** True/undefined = needs a countdown timer; false = start-time alert only (e.g., peeling apples) */
+  requiresTimer?: boolean;
   /** Optional finish timing / window inherited from parent MealItem */
   finishConstraint?: FinishConstraint;
   /** Manual start time override (minutes from midnight) when dragged/pinned on timeline */

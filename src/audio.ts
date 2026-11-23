@@ -48,6 +48,16 @@ class SoundManager {
     this.playTone(880.0, now + 0.18, 0.35, 'triangle', 0.2); // A5
   }
 
+  /** Distinct ascending 3-note chime when a scheduled step is due to start */
+  public playStartChime() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playTone(523.25, now, 0.18, 'sine', 0.22); // C5
+    this.playTone(659.25, now + 0.14, 0.18, 'sine', 0.22); // E5
+    this.playTone(783.99, now + 0.28, 0.35, 'sine', 0.24); // G5
+  }
+
   /** Crisp 3-pulse kitchen timer alarm */
   public playAlarmBell() {
     const ctx = this.ensureContext();

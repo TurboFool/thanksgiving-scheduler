@@ -35,6 +35,7 @@ export const StepModal: React.FC<StepModalProps> = ({
   const [dependencies, setDependencies] = useState<string[]>(step?.dependencies ?? []);
   const [readyBeforeIds, setReadyBeforeIds] = useState<string[]>(step?.readyBeforeIds ?? []);
   const [mustFinishByDinner, setMustFinishByDinner] = useState(step?.mustFinishByDinner ?? true);
+  const [requiresTimer, setRequiresTimer] = useState(step?.requiresTimer !== false);
   const [pinnedStartMin, setPinnedStartMin] = useState<number | undefined>(step?.pinnedStartMin);
   const [canPrepEarly, setCanPrepEarly] = useState(step?.canPrepEarly ?? false);
   const [earlyPrepMinBefore, setEarlyPrepMinBefore] = useState<number>(
@@ -98,6 +99,7 @@ export const StepModal: React.FC<StepModalProps> = ({
       dependencies,
       readyBeforeIds,
       mustFinishByDinner,
+      requiresTimer,
       finishConstraint: step?.finishConstraint,
       pinnedStartMin,
       canPrepEarly,
@@ -234,6 +236,22 @@ export const StepModal: React.FC<StepModalProps> = ({
                     onChange={(e) => setMustFinishByDinner(e.target.checked)}
                   />
                   Must be ready by Serve Time
+                </label>
+              </div>
+
+              <div className="form-field full">
+                <label className="dep-check-item">
+                  <input
+                    type="checkbox"
+                    checked={requiresTimer}
+                    onChange={(e) => setRequiresTimer(e.target.checked)}
+                  />
+                  <span>
+                    <strong>Needs Countdown Timer</strong>{' '}
+                    <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}>
+                      (Uncheck for untimed prep like peeling apples — alerts you when to start without a timer alarm)
+                    </span>
+                  </span>
                 </label>
               </div>
 
