@@ -62,8 +62,8 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: 660 }} onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop">
+      <div className="modal-card" style={{ maxWidth: 660 }}>
         <div className="modal-header">
           <h2 className="modal-title">Kitchen Appliances &amp; Capacity</h2>
           <button type="button" className="btn-icon" onClick={onClose} aria-label="Close">

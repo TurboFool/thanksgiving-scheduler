@@ -373,8 +373,8 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const appMap = new Map(appliances.map((a) => [a.id, a]));
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop">
+      <div className="modal-card" style={{ maxWidth: 720 }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h2 className="modal-title">

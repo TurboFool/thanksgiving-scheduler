@@ -101,8 +101,8 @@ export const StepModal: React.FC<StepModalProps> = ({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop">
+      <div className="modal-card">
         <div className="modal-header">
           <h2 className="modal-title">{isNew ? 'Add Cooking Step' : 'Edit Cooking Step'}</h2>
           <button type="button" className="btn-icon" onClick={onClose} aria-label="Close">
