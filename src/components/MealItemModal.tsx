@@ -12,6 +12,7 @@ import {
   Download,
   Scale,
   Check,
+  BookOpen,
 } from 'lucide-react';
 import type {
   Appliance,
@@ -29,9 +30,12 @@ import {
 } from '../gemini';
 import { formatDuration } from '../scheduler';
 import { scaleIngredients, scaleServingsLabel } from '../recipeScaler';
+import { cloneItemForEvent } from '../workspace';
 
 interface MealItemModalProps {
   item: MealItem | null;
+  mode?: 'event' | 'library';
+  libraryItems?: MealItem[];
   appliances: Appliance[];
   otherItems: MealItem[];
   allEventSteps: MealStep[];
@@ -40,6 +44,7 @@ interface MealItemModalProps {
   onSave: (item: MealItem) => void;
   onDelete?: (itemId: string) => void;
   onSaveToLibrary: (item: MealItem) => void;
+  onQuickImportFromLibrary?: (libItem: MealItem) => void;
   onEditStep: (step: MealStep, parentItemId: string) => void;
   onClose: () => void;
 }
@@ -59,6 +64,8 @@ const SCALE_PRESETS = [0.5, 1, 1.5, 2, 3];
 
 export const MealItemModal: React.FC<MealItemModalProps> = ({
   item,
+  mode = 'event',
+  libraryItems = [],
   appliances,
   otherItems,
   apiKey,
@@ -66,10 +73,14 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   onSave,
   onDelete,
   onSaveToLibrary,
+  onQuickImportFromLibrary,
   onEditStep,
   onClose,
 }) => {
   const isNew = !item;
+  const isLibraryMode = mode === 'library';
+  const [selectedLibId, setSelectedLibId] = useState(libraryItems[0]?.id ?? '');
+  const [loadedLibId, setLoadedLibId] = useState<string | undefined>(item?.libraryItemId);
   const [name, setName] = useState(item?.name ?? '');
   const [course, setCourse] = useState<DishCourse>(item?.course ?? 'Side');
   const [servings, setServings] = useState(item?.servings ?? '');
@@ -107,6 +118,32 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   const [scaleReview, setScaleReview] = useState<ScaledRecipeReviewResult | null>(null);
   const [appliedScaleUpdates, setAppliedScaleUpdates] = useState(false);
   const [savedToLibMsg, setSavedToLibMsg] = useState(false);
+
+  const handleLoadFromLibrary = (libId: string) => {
+    const libItem = libraryItems.find((l) => l.id === libId);
+    if (!libItem) return;
+    const cloned = cloneItemForEvent(libItem);
+    setLoadedLibId(cloned.libraryItemId);
+    setName(cloned.name);
+    setCourse(cloned.course);
+    setServings(cloned.servings ?? '');
+    setPortionMultiplier(cloned.portionMultiplier ?? 1);
+    setDietaryText((cloned.dietaryTags ?? []).join(', '));
+    setSourceUrl(cloned.sourceUrl ?? '');
+    setIngredientsText((cloned.ingredients ?? []).join('\n'));
+    setRecipeInstructions(cloned.recipeInstructions ?? '');
+    setRawNotes(cloned.rawNotes);
+    setConvertedNotes(cloned.convertedNotes);
+    setPrepAheadNotes(cloned.prepAheadNotes ?? '');
+    setScalingReviewText(cloned.scalingReview ?? '');
+    setFinishMode(cloned.finishConstraint.mode);
+    setOffsetMin(cloned.finishConstraint.offsetMin ?? 45);
+    setWindowMaxBeforeMin(cloned.finishConstraint.windowMaxBeforeMin ?? 180);
+    setWindowMinBeforeMin(cloned.finishConstraint.windowMinBeforeMin ?? 30);
+    setSteps(cloned.steps);
+    setAiProcessedAt(cloned.aiProcessedAt);
+    setManualChangeLog([]);
+  };
 
   const baseIngredients = useMemo(
     () =>
@@ -171,7 +208,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       steps: steps.map((s) => ({ ...s, dish: name.trim() || s.dish })),
       aiProcessedAt,
       manualChangeLog,
-      libraryItemId: item?.libraryItemId,
+      libraryItemId: loadedLibId,
       updatedAt: Date.now(),
     };
   };
@@ -340,7 +377,15 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       <div className="modal-card" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h2 className="modal-title">{isNew ? 'Add Meal Item' : `Edit Dish: ${item.name}`}</h2>
+            <h2 className="modal-title">
+              {isLibraryMode
+                ? isNew
+                  ? 'New Library Dish'
+                  : `Edit Library Dish: ${item.name}`
+                : isNew
+                ? 'Add Dish to Event'
+                : `Edit Dish: ${item.name}`}
+            </h2>
             {manualChangeLog.length > 0 && (
               <span className="pill delayed" title="Manual edits made after last AI processing">
                 Edited since AI ({manualChangeLog.length})
@@ -354,6 +399,72 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
+            {isNew && !isLibraryMode && libraryItems.length > 0 && (
+              <div
+                style={{
+                  padding: 10,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--accent-sage-soft)',
+                  border: '1px solid var(--border-strong)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    color: 'var(--ink-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <BookOpen size={14} color="var(--accent-sage)" />
+                  Quick Pick from Saved Meal Library ({libraryItems.length})
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <select
+                    aria-label="Choose dish from library"
+                    value={selectedLibId}
+                    onChange={(e) => setSelectedLibId(e.target.value)}
+                    style={{ flex: 1, minWidth: 200, padding: '6px 8px', fontSize: '0.82rem' }}
+                  >
+                    {libraryItems.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name} ({l.course} · {l.steps.length} step{l.steps.length === 1 ? '' : 's'})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                    onClick={() => handleLoadFromLibrary(selectedLibId)}
+                  >
+                    Load &amp; Customize
+                  </button>
+                  {onQuickImportFromLibrary && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                      onClick={() => {
+                        const found = libraryItems.find((l) => l.id === selectedLibId);
+                        if (found) {
+                          onQuickImportFromLibrary(found);
+                          onClose();
+                        }
+                      }}
+                    >
+                      <Plus size={12} /> Quick Add
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="form-grid">
               <div className="form-field">
                 <label htmlFor="dish-name">Dish / Meal Item Name</label>
@@ -877,28 +988,36 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                   style={{ color: 'var(--status-crimson)' }}
                   onClick={() => onDelete(item.id)}
                 >
-                  <Trash2 size={14} /> Delete Dish
+                  <Trash2 size={14} /> {isLibraryMode ? 'Delete from Library' : 'Delete Dish'}
                 </button>
               )}
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  onSaveToLibrary(buildCurrentItem());
-                  setSavedToLibMsg(true);
-                  setTimeout(() => setSavedToLibMsg(false), 2000);
-                }}
-              >
-                <BookmarkPlus size={14} />
-                {savedToLibMsg ? 'Saved to Library!' : 'Save to Library'}
-              </button>
+              {!isLibraryMode && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    onSaveToLibrary(buildCurrentItem());
+                    setSavedToLibMsg(true);
+                    setTimeout(() => setSavedToLibMsg(false), 2000);
+                  }}
+                >
+                  <BookmarkPlus size={14} />
+                  {savedToLibMsg ? 'Saved to Library!' : 'Save to Library'}
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" className="btn btn-ghost" onClick={onClose}>
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary">
-                {isNew ? 'Add Dish to Event' : 'Save Dish'}
+                {isLibraryMode
+                  ? isNew
+                    ? 'Save to Library'
+                    : 'Update Library Dish'
+                  : isNew
+                  ? 'Add Dish to Event'
+                  : 'Save Dish'}
               </button>
             </div>
           </div>

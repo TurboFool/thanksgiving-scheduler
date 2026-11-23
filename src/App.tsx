@@ -98,7 +98,10 @@ export function App() {
     step: MealStep | null;
     parentItemId?: string;
   } | null>(null);
-  const [editingMealItem, setEditingMealItem] = useState<MealItem | null | 'new'>(null);
+  const [editingMealItem, setEditingMealItem] = useState<{
+    item: MealItem | null;
+    target: 'event' | 'library';
+  } | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedDish, setSelectedDish] = useState<string | null>(null);
   const [showApplianceModal, setShowApplianceModal] = useState(false);
@@ -557,7 +560,30 @@ export function App() {
 
   // Meal Item (Dish) Actions
   const handleSaveMealItem = (saved: MealItem) => {
-    pushUndo(editingMealItem === 'new' ? 'Add dish' : 'Update dish');
+    if (editingMealItem?.target === 'library') {
+      const libId = editingMealItem.item?.id ?? `lib-${Date.now()}`;
+      const libCopy: MealItem = {
+        ...saved,
+        id: libId,
+        libraryItemId: libId,
+        manualChangeLog: [],
+        updatedAt: Date.now(),
+      };
+      setWorkspace((prev) => {
+        const exists = prev.mealLibrary.some((l) => l.id === libId);
+        return {
+          ...prev,
+          updatedAt: Date.now(),
+          mealLibrary: exists
+            ? prev.mealLibrary.map((l) => (l.id === libId ? libCopy : l))
+            : [...prev.mealLibrary, libCopy],
+        };
+      });
+      setEditingMealItem(null);
+      return;
+    }
+
+    pushUndo(editingMealItem?.item ? 'Update dish' : 'Add dish');
     updateActiveEvent((ev) => {
       const exists = ev.mealItems.some((it) => it.id === saved.id);
       return {
@@ -571,6 +597,16 @@ export function App() {
   };
 
   const handleDeleteMealItem = (itemId: string) => {
+    if (editingMealItem?.target === 'library') {
+      setWorkspace((prev) => ({
+        ...prev,
+        updatedAt: Date.now(),
+        mealLibrary: prev.mealLibrary.filter((l) => l.id !== itemId),
+      }));
+      setEditingMealItem(null);
+      return;
+    }
+
     pushUndo('Delete dish');
     updateActiveEvent((ev) => ({
       ...ev,
@@ -981,7 +1017,7 @@ export function App() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => setEditingMealItem('new')}
+            onClick={() => setEditingMealItem({ item: null, target: 'event' })}
           >
             <Plus size={15} /> Add Dish
           </button>
@@ -1171,7 +1207,9 @@ export function App() {
                       type="button"
                       className="btn btn-primary"
                       style={{ padding: '4px 9px', fontSize: '0.74rem' }}
-                      onClick={() => setEditingMealItem(activeDishGroup.item)}
+                      onClick={() =>
+                        setEditingMealItem({ item: activeDishGroup.item, target: 'event' })
+                      }
                     >
                       <Edit3 size={12} /> Edit Dish
                     </button>
@@ -1527,17 +1565,22 @@ export function App() {
 
       {editingMealItem !== null && (
         <MealItemModal
-          item={editingMealItem === 'new' ? null : editingMealItem}
+          item={editingMealItem.item}
+          mode={editingMealItem.target}
+          libraryItems={workspace.mealLibrary}
           appliances={appliances}
-          otherItems={activeEvent.mealItems.filter(
-            (it) => editingMealItem === 'new' || it.id !== editingMealItem.id
-          )}
+          otherItems={
+            editingMealItem.target === 'event'
+              ? activeEvent.mealItems.filter((it) => it.id !== editingMealItem.item?.id)
+              : []
+          }
           allEventSteps={steps}
           apiKey={settings.geminiApiKey}
           onOpenSettings={() => setShowSettingsModal(true)}
           onSave={handleSaveMealItem}
           onDelete={handleDeleteMealItem}
           onSaveToLibrary={handleSaveToLibrary}
+          onQuickImportFromLibrary={handleImportFromLibrary}
           onEditStep={(step, parentItemId) => {
             setEditingMealItem(null);
             setEditingStep({ step, parentItemId });
@@ -1551,6 +1594,14 @@ export function App() {
           library={workspace.mealLibrary}
           activeEventName={activeEvent.name}
           onImportToEvent={handleImportFromLibrary}
+          onEditLibraryItem={(libItem) => {
+            setShowLibraryModal(false);
+            setEditingMealItem({ item: libItem, target: 'library' });
+          }}
+          onCreateLibraryItem={() => {
+            setShowLibraryModal(false);
+            setEditingMealItem({ item: null, target: 'library' });
+          }}
           onDeleteFromLibrary={(libId) =>
             setWorkspace((prev) => ({
               ...prev,

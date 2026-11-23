@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { X, Search, Plus, Trash2, BookOpen, ExternalLink } from 'lucide-react';
+import { X, Search, Plus, Trash2, BookOpen, ExternalLink, Edit3 } from 'lucide-react';
 import type { DishCourse, MealItem } from '../types';
 
 interface MealLibraryModalProps {
   library: MealItem[];
   activeEventName: string;
   onImportToEvent: (item: MealItem) => void;
+  onEditLibraryItem: (item: MealItem) => void;
+  onCreateLibraryItem: () => void;
   onDeleteFromLibrary: (libraryId: string) => void;
   onClose: () => void;
 }
@@ -26,6 +28,8 @@ export const MealLibraryModal: React.FC<MealLibraryModalProps> = ({
   library,
   activeEventName,
   onImportToEvent,
+  onEditLibraryItem,
+  onCreateLibraryItem,
   onDeleteFromLibrary,
   onClose,
 }) => {
@@ -114,6 +118,15 @@ export const MealLibraryModal: React.FC<MealLibraryModalProps> = ({
                 </option>
               ))}
             </select>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onCreateLibraryItem}
+              title="Create a reusable dish directly in the Library"
+            >
+              <Plus size={14} /> New Library Dish
+            </button>
           </div>
 
           {filtered.length === 0 ? (
@@ -127,8 +140,8 @@ export const MealLibraryModal: React.FC<MealLibraryModalProps> = ({
                 color: 'var(--ink-muted)',
               }}
             >
-              No matching dishes in your library yet. Open any dish and click{' '}
-              <strong>Save to Library</strong> to reuse it across future events.
+              No matching dishes in your library yet. Click <strong>New Library Dish</strong> or open
+              any event dish and click <strong>Save to Library</strong>.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -140,16 +153,25 @@ export const MealLibraryModal: React.FC<MealLibraryModalProps> = ({
                     className="upnext-item"
                     style={{ marginBottom: 0, alignItems: 'flex-start' }}
                   >
-                    <div className="upnext-info">
+                    <div
+                      className="upnext-info"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => onEditLibraryItem(item)}
+                      title="Click to view or edit this library dish"
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span className="upnext-title">{item.name}</span>
                         <span className="pill">{item.course}</span>
                         <span className="pill">{item.steps.length} step(s)</span>
+                        {item.ingredients && item.ingredients.length > 0 && (
+                          <span className="pill">{item.ingredients.length} ingr.</span>
+                        )}
                         {item.sourceUrl && (
                           <a
                             href={item.sourceUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             style={{
                               fontSize: '0.72rem',
                               color: 'var(--accent-sage)',
@@ -162,7 +184,7 @@ export const MealLibraryModal: React.FC<MealLibraryModalProps> = ({
                           </a>
                         )}
                       </div>
-                      {(item.convertedNotes || item.rawNotes) && (
+                      {(item.convertedNotes || item.rawNotes || item.recipeInstructions) && (
                         <div
                           style={{
                             fontSize: '0.76rem',
@@ -174,11 +196,20 @@ export const MealLibraryModal: React.FC<MealLibraryModalProps> = ({
                             overflow: 'hidden',
                           }}
                         >
-                          {item.convertedNotes || item.rawNotes}
+                          {item.convertedNotes || item.rawNotes || item.recipeInstructions}
                         </div>
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '5px 9px', fontSize: '0.76rem' }}
+                        onClick={() => onEditLibraryItem(item)}
+                        title="View or edit library dish"
+                      >
+                        <Edit3 size={12} /> Edit
+                      </button>
                       <button
                         type="button"
                         className={`btn ${justImported ? 'btn-secondary' : 'btn-primary'}`}
