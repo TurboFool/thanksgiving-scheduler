@@ -858,6 +858,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  min-width: 0;
 }
 
 .form-field.full {
@@ -870,7 +871,7 @@ textarea {
   color: var(--ink-secondary);
 }
 
-.form-field input,
+.form-field input:not([type='checkbox']):not([type='radio']),
 .form-field select,
 .form-field textarea {
   border: 1px solid var(--border-strong);
@@ -878,6 +879,9 @@ textarea {
   padding: 8px 10px;
   font-size: 0.86rem;
   background: var(--bg-surface);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .form-field input:focus,

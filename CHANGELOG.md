@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.3.1] — 2026-11-22
+
+### Fixed
+- Fixed horizontal overflow in **Kitchen Appliances & Capacity** (`ApplianceModal`) by constraining `.form-field` inputs (`min-width: 0; width: 100%; box-sizing: border-box`) and using `minmax(0, ...)` grid tracks.
+
+---
+
 ## [2.3.0] — 2026-11-22
 
 ### Added

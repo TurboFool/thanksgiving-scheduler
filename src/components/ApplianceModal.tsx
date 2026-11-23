@@ -100,7 +100,7 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
                   background: 'var(--bg-canvas)',
                   opacity: dragIdx === idx ? 0.55 : 1,
                   display: 'grid',
-                  gridTemplateColumns: 'auto 1.3fr 1fr 0.7fr 0.8fr auto',
+                  gridTemplateColumns: 'auto minmax(0, 1.4fr) minmax(0, 1.1fr) 72px 92px auto',
                   gap: 10,
                   alignItems: 'end',
                 }}
