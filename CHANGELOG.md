@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.0] — 2026-11-22
+
+### Added
+- **Save Visual Confirmations**: Added a floating `.toast-banner` confirmation toast across all save, update, delete, import, sync, and settings actions.
+- **Return-to-Parent Modal Navigation**: Saving, deleting, or canceling a Library dish opened from `MealLibraryModal` now returns you to `MealLibraryModal`, and editing a step from inside `MealItemModal` now returns you to `MealItemModal`.
+
+---
+
 ## [2.0.1] — 2026-11-22
 
 ### Fixed

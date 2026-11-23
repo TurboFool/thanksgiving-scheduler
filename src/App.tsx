@@ -97,10 +97,12 @@ export function App() {
   const [editingStep, setEditingStep] = useState<{
     step: MealStep | null;
     parentItemId?: string;
+    returnToItem?: { id: string; target: 'event' | 'library'; returnTo?: 'library' };
   } | null>(null);
   const [editingMealItem, setEditingMealItem] = useState<{
     item: MealItem | null;
     target: 'event' | 'library';
+    returnTo?: 'library';
   } | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedDish, setSelectedDish] = useState<string | null>(null);
@@ -113,9 +115,22 @@ export function App() {
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [scanAiAdvice, setScanAiAdvice] = useState<string | null>(null);
   const [scanAiLoading, setScanAiLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const warned5MinRef = useRef<Set<string>>(new Set());
   const alarmTickRef = useRef<number>(0);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, 3200);
+  };
 
   const activeEvent = useMemo(
     () => workspace.events.find((e) => e.id === workspace.activeEventId) ?? workspace.events[0],
@@ -560,8 +575,11 @@ export function App() {
 
   // Meal Item (Dish) Actions
   const handleSaveMealItem = (saved: MealItem) => {
+    const shouldReturnToLibrary = editingMealItem?.returnTo === 'library';
+
     if (editingMealItem?.target === 'library') {
       const libId = editingMealItem.item?.id ?? `lib-${Date.now()}`;
+      const isUpdate = Boolean(editingMealItem.item);
       const libCopy: MealItem = {
         ...saved,
         id: libId,
@@ -580,10 +598,17 @@ export function App() {
         };
       });
       setEditingMealItem(null);
+      if (shouldReturnToLibrary) setShowLibraryModal(true);
+      showToast(
+        isUpdate
+          ? `Updated "${saved.name}" in Meal Library`
+          : `Saved "${saved.name}" to Meal Library`
+      );
       return;
     }
 
-    pushUndo(editingMealItem?.item ? 'Update dish' : 'Add dish');
+    const isUpdate = Boolean(editingMealItem?.item);
+    pushUndo(isUpdate ? 'Update dish' : 'Add dish');
     updateActiveEvent((ev) => {
       const exists = ev.mealItems.some((it) => it.id === saved.id);
       return {
@@ -594,9 +619,13 @@ export function App() {
       };
     });
     setEditingMealItem(null);
+    showToast(isUpdate ? `Saved "${saved.name}"` : `Added "${saved.name}" to ${activeEvent.name}`);
   };
 
   const handleDeleteMealItem = (itemId: string) => {
+    const shouldReturnToLibrary = editingMealItem?.returnTo === 'library';
+    const deletedName = editingMealItem?.item?.name ?? 'dish';
+
     if (editingMealItem?.target === 'library') {
       setWorkspace((prev) => ({
         ...prev,
@@ -604,6 +633,8 @@ export function App() {
         mealLibrary: prev.mealLibrary.filter((l) => l.id !== itemId),
       }));
       setEditingMealItem(null);
+      if (shouldReturnToLibrary) setShowLibraryModal(true);
+      showToast(`Removed "${deletedName}" from Meal Library`);
       return;
     }
 
@@ -614,6 +645,7 @@ export function App() {
     }));
     setEditingMealItem(null);
     setSelectedDish(null);
+    showToast(`Removed "${deletedName}"`);
   };
 
   const handleSaveToLibrary = (item: MealItem) => {
@@ -635,6 +667,7 @@ export function App() {
           : [...prev.mealLibrary, libCopy],
       };
     });
+    showToast(`Saved "${item.name}" to Meal Library`);
   };
 
   const handleImportFromLibrary = (libItem: MealItem) => {
@@ -644,6 +677,7 @@ export function App() {
       ...ev,
       mealItems: [...ev.mealItems, cloned],
     }));
+    showToast(`Added "${libItem.name}" to ${activeEvent.name}`);
   };
 
   const handleResetDemo = () => {
@@ -1570,10 +1604,66 @@ export function App() {
           step={editingStep.step}
           allSteps={steps}
           appliances={appliances}
-          onSave={handleSaveStep}
-          onDelete={handleDeleteStep}
-          onDuplicate={handleDuplicateStep}
-          onClose={() => setEditingStep(null)}
+          onSave={(saved) => {
+            const ret = editingStep.returnToItem;
+            handleSaveStep(saved);
+            showToast(`Saved step "${saved.title}"`);
+            if (ret) {
+              const sourceList =
+                ret.target === 'library' ? workspace.mealLibrary : activeEvent.mealItems;
+              const parent = sourceList.find((it) => it.id === ret.id);
+              if (parent) {
+                const updatedParent: MealItem = {
+                  ...parent,
+                  steps: parent.steps.some((s) => s.id === saved.id)
+                    ? parent.steps.map((s) => (s.id === saved.id ? saved : s))
+                    : [...parent.steps, saved],
+                };
+                setEditingMealItem({
+                  item: updatedParent,
+                  target: ret.target,
+                  returnTo: ret.returnTo,
+                });
+              }
+            }
+          }}
+          onDelete={(id) => {
+            const ret = editingStep.returnToItem;
+            handleDeleteStep(id);
+            showToast('Deleted cooking step');
+            if (ret) {
+              const sourceList =
+                ret.target === 'library' ? workspace.mealLibrary : activeEvent.mealItems;
+              const parent = sourceList.find((it) => it.id === ret.id);
+              if (parent) {
+                setEditingMealItem({
+                  item: { ...parent, steps: parent.steps.filter((s) => s.id !== id) },
+                  target: ret.target,
+                  returnTo: ret.returnTo,
+                });
+              }
+            }
+          }}
+          onDuplicate={(orig) => {
+            handleDuplicateStep(orig);
+            showToast(`Duplicated "${orig.title}"`);
+          }}
+          onClose={() => {
+            const ret = editingStep.returnToItem;
+            setEditingStep(null);
+            if (ret) {
+              const sourceList =
+                ret.target === 'library' ? workspace.mealLibrary : activeEvent.mealItems;
+              const parent = sourceList.find((it) => it.id === ret.id);
+              if (parent) {
+                setEditingMealItem({
+                  item: parent,
+                  target: ret.target,
+                  returnTo: ret.returnTo,
+                });
+              }
+            }
+          }}
         />
       )}
 
@@ -1596,10 +1686,20 @@ export function App() {
           onSaveToLibrary={handleSaveToLibrary}
           onQuickImportFromLibrary={handleImportFromLibrary}
           onEditStep={(step, parentItemId) => {
+            const retTarget = editingMealItem.target;
+            const retTo = editingMealItem.returnTo;
             setEditingMealItem(null);
-            setEditingStep({ step, parentItemId });
+            setEditingStep({
+              step,
+              parentItemId,
+              returnToItem: { id: parentItemId, target: retTarget, returnTo: retTo },
+            });
           }}
-          onClose={() => setEditingMealItem(null)}
+          onClose={() => {
+            const shouldReturnToLibrary = editingMealItem.returnTo === 'library';
+            setEditingMealItem(null);
+            if (shouldReturnToLibrary) setShowLibraryModal(true);
+          }}
         />
       )}
 
@@ -1610,19 +1710,21 @@ export function App() {
           onImportToEvent={handleImportFromLibrary}
           onEditLibraryItem={(libItem) => {
             setShowLibraryModal(false);
-            setEditingMealItem({ item: libItem, target: 'library' });
+            setEditingMealItem({ item: libItem, target: 'library', returnTo: 'library' });
           }}
           onCreateLibraryItem={() => {
             setShowLibraryModal(false);
-            setEditingMealItem({ item: null, target: 'library' });
+            setEditingMealItem({ item: null, target: 'library', returnTo: 'library' });
           }}
-          onDeleteFromLibrary={(libId) =>
+          onDeleteFromLibrary={(libId) => {
+            const target = workspace.mealLibrary.find((l) => l.id === libId);
             setWorkspace((prev) => ({
               ...prev,
               updatedAt: Date.now(),
               mealLibrary: prev.mealLibrary.filter((l) => l.id !== libId),
-            }))
-          }
+            }));
+            showToast(`Removed "${target?.name ?? 'dish'}" from Meal Library`);
+          }}
           onClose={() => setShowLibraryModal(false)}
         />
       )}
@@ -1642,6 +1744,7 @@ export function App() {
               }));
             }
             setShowApplianceModal(false);
+            showToast('Saved kitchen appliances');
           }}
           onClose={() => setShowApplianceModal(false)}
         />
@@ -1667,12 +1770,14 @@ export function App() {
                 ...ev,
                 mealItems: [...ev.mealItems, ...addedItems],
               }));
+              showToast(`Added ${imported.length} step(s) to ${activeEvent.name}`);
             } else {
               pushUndo('Import schedule');
               updateActiveEvent((ev) => ({ ...ev, mealItems: newItems }));
               setSelectedStepId(null);
               setSelectedDish(null);
               setMutedAlarms(new Set());
+              showToast(`Imported ${imported.length} step(s) into ${activeEvent.name}`);
             }
           }}
           onClose={() => setShowGeminiModal(false)}
@@ -1688,10 +1793,12 @@ export function App() {
             setWorkspace(remote);
             setSelectedStepId(null);
             setSelectedDish(null);
+            showToast(`Synced from cloud (v${remote.syncVersion})`);
           }}
-          onMarkSynced={(syncVersion, updatedAt) =>
-            setWorkspace((prev) => ({ ...prev, syncVersion, updatedAt }))
-          }
+          onMarkSynced={(syncVersion, updatedAt) => {
+            setWorkspace((prev) => ({ ...prev, syncVersion, updatedAt }));
+            showToast(`Saved to cloud (v${syncVersion})`);
+          }}
           onClose={() => setShowSyncModal(false)}
         />
       )}
@@ -1705,9 +1812,17 @@ export function App() {
             if (typeof nextSimMin === 'number') {
               updateActiveEvent((ev) => ({ ...ev, simulatedNowMin: nextSimMin }));
             }
+            showToast('Saved settings');
           }}
           onClose={() => setShowSettingsModal(false)}
         />
+      )}
+
+      {toastMessage && (
+        <div className="toast-banner" role="status" aria-live="polite">
+          <Check size={15} color="var(--accent-sage)" />
+          <span>{toastMessage}</span>
+        </div>
       )}
     </div>
   );
