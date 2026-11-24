@@ -12,6 +12,9 @@ const COLORS = ['#C2592B', '#B45309', '#0F766E', '#6D28D9', '#2F7A53', '#1D4ED8'
 
 export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSave, onClose }) => {
   const [list, setList] = useState<Appliance[]>(appliances.map((a) => ({ ...a })));
+  const [modesText, setModesText] = useState<Record<string, string>>(() =>
+    Object.fromEntries(list.map((a) => [a.id, (a.supportedModes ?? []).join(', ')]))
+  );
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
 
@@ -21,10 +24,11 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
 
   const addAppliance = () => {
     const idx = list.length;
+    const newId = `app-${Date.now()}`;
     setList((prev) => [
       ...prev,
       {
-        id: `app-${Date.now()}`,
+        id: newId,
         name: 'Slow Cooker',
         capacity: 1,
         slotLabel: 'pot',
@@ -33,6 +37,7 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
         color: COLORS[idx % COLORS.length],
       },
     ]);
+    setModesText((prev) => ({ ...prev, [newId]: '' }));
   };
 
   const removeAppliance = (idx: number) => {
@@ -58,7 +63,18 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(list);
+    const normalized = list.map((a) => {
+      const raw = modesText[a.id] ?? (a.supportedModes ?? []).join(', ');
+      const modes = raw
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean);
+      return {
+        ...a,
+        supportedModes: modes.length > 0 ? modes : undefined,
+      };
+    });
+    onSave(normalized);
   };
 
   return (
@@ -199,13 +215,10 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
                     <span style={{ whiteSpace: 'nowrap', color: 'var(--ink-secondary)' }}>Modes:</span>
                     <input
                       type="text"
-                      value={(app.supportedModes ?? []).join(', ')}
+                      value={modesText[app.id] ?? (app.supportedModes ?? []).join(', ')}
                       onChange={(e) => {
-                        const modes = e.target.value
-                          .split(',')
-                          .map((m) => m.trim())
-                          .filter(Boolean);
-                        updateItem(idx, { supportedModes: modes.length > 0 ? modes : undefined });
+                        const val = e.target.value;
+                        setModesText((prev) => ({ ...prev, [app.id]: val }));
                       }}
                       placeholder="e.g., Bake, Convection, Air Fryer"
                       style={{

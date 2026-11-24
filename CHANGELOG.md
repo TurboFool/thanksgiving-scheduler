@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.11.1] — 2026-11-23
+
+### Fixed
+- **Appliance Modes Input (`ApplianceModal.tsx`)**: Buffered raw mode text in local `modesText` state and parsed comma-separated values on save so spaces and commas can be typed freely without being stripped mid-keystroke.
+
+---
+
 ## [2.11.0] — 2026-11-23
 
 ### Added
