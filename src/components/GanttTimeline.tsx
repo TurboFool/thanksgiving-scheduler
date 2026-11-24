@@ -134,9 +134,11 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   const availTrackWidth = Math.max(320, viewportWidth - 195);
 
   const startBoundRef = useRef(startBound);
-  startBoundRef.current = startBound;
   const pxPerMinRef = useRef(pxPerMin);
-  pxPerMinRef.current = pxPerMin;
+  useEffect(() => {
+    startBoundRef.current = startBound;
+    pxPerMinRef.current = pxPerMin;
+  }, [startBound, pxPerMin]);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
