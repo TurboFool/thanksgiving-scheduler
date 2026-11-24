@@ -6,6 +6,7 @@ import {
   Check,
   Clock,
   Cloud,
+  CloudDownload,
   Edit3,
   FileText,
   Flame,
@@ -58,6 +59,7 @@ import { GeminiModal } from './components/GeminiModal';
 import { SyncModal } from './components/SyncModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PrintPlanModal } from './components/PrintPlanModal';
+import { pullCloudWorkspace } from './sync';
 
 function getRealNowMin(): number {
   const d = new Date();
@@ -128,6 +130,9 @@ export function App() {
   const [scanAiAdvice, setScanAiAdvice] = useState<string | null>(null);
   const [scanAiLoading, setScanAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [cloudUpdateAvailable, setCloudUpdateAvailable] = useState<ThymeLineWorkspace | null>(
+    null
+  );
 
   const warned5MinRef = useRef<Set<string>>(new Set());
   const dueAlertedRef = useRef<Set<string>>(new Set());
@@ -170,6 +175,29 @@ export function App() {
       // ignore storage quota errors
     }
   }, [workspace, settings]);
+
+  // Silent background check on page load for a newer cloud backup
+  useEffect(() => {
+    const passcode = settings.syncPasscode.trim();
+    if (!passcode) return;
+    let cancelled = false;
+    pullCloudWorkspace(passcode)
+      .then((res) => {
+        if (cancelled) return;
+        const remoteVer = res.syncVersion ?? res.workspace?.syncVersion ?? 0;
+        if (res.exists && res.workspace && remoteVer > workspace.syncVersion) {
+          setCloudUpdateAvailable(res.workspace);
+        }
+      })
+      .catch(() => {
+        // Ignore offline/network errors during silent background check
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Only run on initial load or when syncPasscode changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.syncPasscode]);
 
   // Helper to update the active event cleanly
   const updateActiveEvent = (updater: (ev: MealEvent) => MealEvent) => {
@@ -1524,6 +1552,56 @@ export function App() {
           </div>
 
           <div className="kitchen-scroll">
+            {/* Newer Cloud Version Available Banner */}
+            {cloudUpdateAvailable && (
+              <div
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--accent-sage-soft)',
+                  border: '1px solid var(--accent-sage)',
+                  fontSize: '0.76rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span>
+                    Newer cloud backup available (
+                    <strong className="mono">v{cloudUpdateAvailable.syncVersion}</strong> vs your{' '}
+                    <strong className="mono">v{workspace.syncVersion}</strong>).
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ fontSize: '0.72rem', padding: '0 4px' }}
+                    onClick={() => setCloudUpdateAvailable(null)}
+                    aria-label="Dismiss cloud update notice"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+                    onClick={() => {
+                      pushUndo('Sync down newer cloud version');
+                      setWorkspace(cloudUpdateAvailable);
+                      setSelectedStepId(null);
+                      setSelectedDish(null);
+                      showToast(`Synced from cloud (v${cloudUpdateAvailable.syncVersion})`);
+                      setCloudUpdateAvailable(null);
+                    }}
+                  >
+                    <CloudDownload size={12} /> Sync Down (v{cloudUpdateAvailable.syncVersion})
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Scan Notification Banner */}
             {scanNotice && (
               <div
@@ -1731,7 +1809,7 @@ export function App() {
                   return (
                     <div
                       key={s.id}
-                      className="upnext-item"
+                      className="upnext-item stacked"
                       onClick={() => {
                         setSelectedStepId(s.id);
                         setEditingStep({ step: s, parentItemId: activeDishGroup.item.id });
@@ -1742,56 +1820,75 @@ export function App() {
                         opacity: s.status === 'done' ? 0.78 : 1,
                       }}
                     >
-                      <div className="upnext-info">
+                      <div className="upnext-top">
                         <div
                           className="upnext-title"
                           style={{
+                            flex: 1,
+                            minWidth: 0,
                             textDecoration: s.status === 'done' ? 'line-through' : undefined,
                           }}
                         >
                           {s.title}
                         </div>
-                        <div className="upnext-sub">
-                          {renderEditableTimeRange(s)}
-                          <span>· {formatDuration(s.durationMin + (s.addedMin || 0))}</span>
-                          <span>· {app?.name}</span>
-                          {s.temperature !== undefined && (
-                            <span className="pill temp">{s.temperature}°F</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            style={{ padding: 4 }}
+                            title="Edit full step (duration, appliance, mode, dependencies)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedStepId(s.id);
+                              setEditingStep({ step: s, parentItemId: activeDishGroup.item.id });
+                            }}
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                          {s.status === 'pending' && s.requiresTimer === false && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startStep(s.id);
+                                }}
+                                title="Mark prep in progress (no countdown alarm)"
+                              >
+                                Begin
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  completeStep(s.id);
+                                }}
+                              >
+                                <Check size={11} /> Done
+                              </button>
+                            </>
                           )}
-                          {s.isDelayed && <span className="pill delayed">+{s.delayMin}m</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          style={{ padding: 4 }}
-                          title="Edit full step (duration, appliance, mode, dependencies)"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedStepId(s.id);
-                            setEditingStep({ step: s, parentItemId: activeDishGroup.item.id });
-                          }}
-                        >
-                          <Edit3 size={12} />
-                        </button>
-                        {s.status === 'pending' && s.requiresTimer === false && (
-                          <>
+                          {s.status === 'pending' && s.requiresTimer !== false && (
                             <button
                               type="button"
-                              className="btn btn-secondary"
+                              className="btn btn-primary"
                               style={{ padding: '4px 8px', fontSize: '0.72rem' }}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 startStep(s.id);
                               }}
-                              title="Mark prep in progress (no countdown alarm)"
                             >
-                              Begin
+                              <Play size={11} /> Start
                             </button>
+                          )}
+                          {(s.status === 'running' || s.status === 'paused') && (
                             <button
                               type="button"
-                              className="btn btn-primary"
+                              className="btn btn-secondary"
                               style={{ padding: '4px 8px', fontSize: '0.72rem' }}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1800,61 +1897,49 @@ export function App() {
                             >
                               <Check size={11} /> Done
                             </button>
-                          </>
+                          )}
+                          {s.status === 'done' && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{ padding: '4px 7px', fontSize: '0.72rem' }}
+                                title="Needs more time — reopen with +5m timer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  reopenAndExtendStep(s.id, 5);
+                                }}
+                              >
+                                +5m
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  reopenStep(s.id);
+                                }}
+                              >
+                                Reopen
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="upnext-sub">
+                        {renderEditableTimeRange(s)}
+                        <span>· {formatDuration(s.durationMin + (s.addedMin || 0))}</span>
+                        <span>· {app?.name ?? (s.applianceId.startsWith('category:') ? `Any ${s.applianceId.slice(9)}` : 'Needs Location')}</span>
+                        {s.applianceMode && (
+                          <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
+                            {s.applianceMode}
+                          </span>
                         )}
-                        {s.status === 'pending' && s.requiresTimer !== false && (
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startStep(s.id);
-                            }}
-                          >
-                            <Play size={11} /> Start
-                          </button>
+                        {s.temperature !== undefined && (
+                          <span className="pill temp">{s.temperature}°F</span>
                         )}
-                        {(s.status === 'running' || s.status === 'paused') && (
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              completeStep(s.id);
-                            }}
-                          >
-                            <Check size={11} /> Done
-                          </button>
-                        )}
-                        {s.status === 'done' && (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              style={{ padding: '4px 7px', fontSize: '0.72rem' }}
-                              title="Needs more time — reopen with +5m timer"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                reopenAndExtendStep(s.id, 5);
-                              }}
-                            >
-                              +5m
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                reopenStep(s.id);
-                              }}
-                            >
-                              Reopen
-                            </button>
-                          </>
-                        )}
+                        {s.isDelayed && <span className="pill delayed">+{s.delayMin}m</span>}
                       </div>
                     </div>
                   );
@@ -2028,94 +2113,101 @@ export function App() {
                     return (
                       <div
                         key={s.id}
-                        className="upnext-item"
+                        className="upnext-item stacked"
                         onClick={() => {
                           setSelectedStepId(s.id);
                           setEditingStep({ step: s });
                         }}
                         style={{ cursor: 'pointer' }}
                       >
-                        <div className="upnext-info">
-                          <div className="upnext-title">{s.title}</div>
-                          <div className="upnext-sub">
-                            {renderEditableTimeRange(s)}
-                            <span>· {formatDuration(s.durationMin)}</span>
-                            <span>· {app?.name}</span>
-                            {s.temperature !== undefined && (
-                              <span className="pill temp">{s.temperature}°F</span>
-                            )}
-                            {s.requiresTimer === false && (
-                              <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
-                                Start Alert
-                              </span>
-                            )}
-                            {s.isDelayed && <span className="pill delayed">+{s.delayMin}m</span>}
+                        <div className="upnext-top">
+                          <div className="upnext-title" style={{ flex: 1, minWidth: 0 }}>
+                            {s.title}
                           </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            style={{ padding: 4 }}
-                            title="Edit full step (duration, appliance, mode, dependencies)"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedStepId(s.id);
-                              setEditingStep({ step: s });
-                            }}
-                          >
-                            <Edit3 size={12} />
-                          </button>
-                          {startsIn <= 0 && (
-                            <span
-                              style={{
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                color: 'var(--accent-sage)',
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              style={{ padding: 4 }}
+                              title="Edit full step (duration, appliance, mode, dependencies)"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedStepId(s.id);
+                                setEditingStep({ step: s });
                               }}
                             >
-                              DUE
-                            </span>
-                          )}
-                          {s.requiresTimer === false ? (
-                            <>
+                              <Edit3 size={12} />
+                            </button>
+                            {startsIn <= 0 && (
+                              <span
+                                style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  color: 'var(--accent-sage)',
+                                }}
+                              >
+                                DUE
+                              </span>
+                            )}
+                            {s.requiresTimer === false ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                  title="Mark prep in progress (no countdown timer)"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startStep(s.id);
+                                  }}
+                                >
+                                  Begin
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary"
+                                  style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    completeStep(s.id);
+                                  }}
+                                >
+                                  <Check size={12} /> Done
+                                </button>
+                              </>
+                            ) : (
                               <button
                                 type="button"
-                                className="btn btn-secondary"
-                                style={{ padding: '5px 8px', fontSize: '0.73rem' }}
-                                title="Mark prep in progress (no countdown timer)"
+                                className="btn btn-primary"
+                                style={{ padding: '4px 9px', fontSize: '0.74rem' }}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   startStep(s.id);
                                 }}
                               >
-                                Begin
+                                <Play size={12} /> Start
                               </button>
-                              <button
-                                type="button"
-                                className="btn btn-primary"
-                                style={{ padding: '5px 8px', fontSize: '0.73rem' }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  completeStep(s.id);
-                                }}
-                              >
-                                <Check size={12} /> Done
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              style={{ padding: '5px 9px', fontSize: '0.75rem' }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                startStep(s.id);
-                              }}
-                            >
-                              <Play size={12} /> Start
-                            </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="upnext-sub">
+                          {renderEditableTimeRange(s)}
+                          <span>· {formatDuration(s.durationMin)}</span>
+                          <span>· {app?.name ?? (s.applianceId.startsWith('category:') ? `Any ${s.applianceId.slice(9)}` : 'Needs Location')}</span>
+                          {s.applianceMode && (
+                            <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
+                              {s.applianceMode}
+                            </span>
                           )}
+                          {s.temperature !== undefined && (
+                            <span className="pill temp">{s.temperature}°F</span>
+                          )}
+                          {s.requiresTimer === false && (
+                            <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
+                              Start Alert
+                            </span>
+                          )}
+                          {s.isDelayed && <span className="pill delayed">+{s.delayMin}m</span>}
                         </div>
                       </div>
                     );

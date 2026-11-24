@@ -467,6 +467,20 @@ textarea {
   transition: border-color 0.14s ease;
 }
 
+.upnext-item.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.upnext-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .upnext-item:hover {
   border-color: var(--border-strong);
 }
@@ -490,7 +504,8 @@ textarea {
   margin-top: 2px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 7px;
 }
 
 .pill {

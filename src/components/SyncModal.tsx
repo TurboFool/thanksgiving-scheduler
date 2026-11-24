@@ -24,11 +24,13 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conflictRemote, setConflictRemote] = useState<ThymeLineWorkspace | null>(null);
+  const [olderRemote, setOlderRemote] = useState<ThymeLineWorkspace | null>(null);
 
   const handlePull = async () => {
     setError(null);
     setStatusMsg(null);
     setConflictRemote(null);
+    setOlderRemote(null);
     if (!passcode.trim()) {
       setError('Configure your family sync passcode in Settings first.');
       return;
@@ -40,13 +42,28 @@ export const SyncModal: React.FC<SyncModalProps> = ({
         setStatusMsg('No cloud backup exists yet. Click "Save to Cloud" to create one.');
         return;
       }
-      if (res.syncVersion === workspace.syncVersion) {
-        setStatusMsg(`Already up to date (v${res.syncVersion}).`);
+      const remoteVer = res.syncVersion ?? res.workspace.syncVersion ?? 0;
+      if (remoteVer < workspace.syncVersion) {
+        setOlderRemote(res.workspace);
+        setError(
+          `Warning: Cloud backup (v${remoteVer}) is OLDER than your local version (v${workspace.syncVersion}). Loading it will discard newer local changes.`
+        );
+        return;
+      }
+      if (remoteVer === workspace.syncVersion) {
+        if ((res.workspace.updatedAt ?? 0) + 5000 < (workspace.updatedAt ?? 0)) {
+          setOlderRemote(res.workspace);
+          setError(
+            `Cloud backup is v${remoteVer}, but your local copy was edited more recently. Loading the cloud copy may discard recent local edits.`
+          );
+          return;
+        }
+        setStatusMsg(`Already up to date (v${remoteVer}).`);
         return;
       }
       onApplyRemoteWorkspace(res.workspace);
       setStatusMsg(
-        `Checked in cloud updates (v${res.syncVersion}, ${res.workspace.events.length} event(s)).`
+        `Checked in cloud updates (v${remoteVer}, ${res.workspace.events.length} event(s)).`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to check in from cloud.');
@@ -235,6 +252,43 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                 onClick={() => handlePush(true)}
               >
                 Overwrite Cloud with Mine
+              </button>
+            </div>
+          )}
+
+          {olderRemote && (
+            <div
+              style={{
+                padding: 10,
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--status-amber-soft)',
+                border: '1px solid var(--status-amber)',
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  onApplyRemoteWorkspace(olderRemote);
+                  setOlderRemote(null);
+                  setError(null);
+                  setStatusMsg(`Loaded older Cloud backup (v${olderRemote.syncVersion}).`);
+                }}
+              >
+                Load Older Cloud Backup Anyway (v{olderRemote.syncVersion})
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setOlderRemote(null);
+                  handlePush(true);
+                }}
+              >
+                Keep Local &amp; Update Cloud
               </button>
             </div>
           )}

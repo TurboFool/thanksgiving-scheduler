@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.13.0] — 2026-11-23
+
+### Improved & Added
+- **Spacious 2-Row Kitchen Mode Cards (`index.css`, `App.tsx`)**: Restructured **Up Next** and **Dish Steps** cards into a clean 2-row stacked layout (Title + action buttons on top; full-width editable start/end times, duration, appliance, mode, temp, and delay pills below) so elements never wrap awkwardly or collide.
+- **Older Cloud Backup Warning (`SyncModal.tsx`)**: Checking in from the cloud now warns before overwriting newer local changes when the cloud `syncVersion` (or `updatedAt`) is older than your local copy, offering **Load Older Cloud Backup Anyway** or **Keep Local & Update Cloud**.
+- **Background Cloud Update Check on Load (`App.tsx`)**: Silently checks for a newer cloud backup on page load when a sync passcode is configured, displaying a non-intrusive **Newer cloud backup available** banner with a 1-click **Sync Down** button.
+
+---
+
 ## [2.12.0] — 2026-11-23
 
 ### Added
