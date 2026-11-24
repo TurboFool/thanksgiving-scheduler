@@ -118,6 +118,11 @@ export function App() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showPrintPlanModal, setShowPrintPlanModal] = useState(false);
+  const [inlineTimeEdit, setInlineTimeEdit] = useState<{
+    stepId: string;
+    field: 'start' | 'end';
+    value: string;
+  } | null>(null);
   const [mutedAlarms, setMutedAlarms] = useState<Set<string>>(new Set());
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [scanAiAdvice, setScanAiAdvice] = useState<string | null>(null);
@@ -640,6 +645,160 @@ export function App() {
       ),
     }));
     setEditingStep(null);
+  };
+
+  const commitInlineTimeEdit = (
+    step: ScheduledStep,
+    field: 'start' | 'end',
+    value: string
+  ) => {
+    setInlineTimeEdit(null);
+    const parsedMin = timeInputToMin(value);
+    const dur = Math.max(1, step.durationMin + (step.addedMin || 0));
+    const nextStartMin =
+      field === 'start' ? parsedMin : Math.max(0, parsedMin - dur);
+    if (nextStartMin === step.startMin && step.pinnedStartMin !== undefined) return;
+    pushUndo(`Set "${step.title}" ${field} time`);
+    mutateEventSteps((s) => {
+      if (s.id !== step.id) return s;
+      if (s.status === 'done') {
+        return {
+          ...s,
+          actualStartMin: nextStartMin,
+          actualEndMin: nextStartMin + dur,
+        };
+      }
+      if (s.status === 'running' || s.status === 'paused') {
+        return {
+          ...s,
+          actualStartMin: nextStartMin,
+          pinnedStartMin: nextStartMin,
+        };
+      }
+      return {
+        ...s,
+        pinnedStartMin: nextStartMin,
+      };
+    });
+    showToast(
+      `Updated "${step.title}" to ${formatTimeMin(nextStartMin)}–${formatTimeMin(nextStartMin + dur)}`
+    );
+  };
+
+  const renderEditableTimeRange = (s: ScheduledStep) => {
+    const editingStart = inlineTimeEdit?.stepId === s.id && inlineTimeEdit.field === 'start';
+    const editingEnd = inlineTimeEdit?.stepId === s.id && inlineTimeEdit.field === 'end';
+    return (
+      <span
+        className="mono"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 600 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {editingStart ? (
+          <input
+            type="time"
+            autoFocus
+            value={inlineTimeEdit.value}
+            onChange={(e) =>
+              setInlineTimeEdit((cur) => (cur ? { ...cur, value: e.target.value } : null))
+            }
+            onBlur={() => commitInlineTimeEdit(s, 'start', inlineTimeEdit.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitInlineTimeEdit(s, 'start', inlineTimeEdit.value);
+              } else if (e.key === 'Escape') {
+                setInlineTimeEdit(null);
+              }
+            }}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.72rem',
+              padding: '1px 4px',
+              borderRadius: 4,
+              border: '1px solid var(--accent-terracotta)',
+              background: 'var(--bg-surface)',
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{
+              padding: '0 3px',
+              fontSize: 'inherit',
+              fontWeight: 600,
+              fontFamily: 'var(--font-mono)',
+              textDecoration: 'underline dotted',
+              textUnderlineOffset: 2,
+            }}
+            title="Click to edit start time"
+            onClick={(e) => {
+              e.stopPropagation();
+              setInlineTimeEdit({
+                stepId: s.id,
+                field: 'start',
+                value: minToTimeInput(s.startMin),
+              });
+            }}
+          >
+            {formatTimeMin(s.startMin)}
+          </button>
+        )}
+        <span>–</span>
+        {editingEnd ? (
+          <input
+            type="time"
+            autoFocus
+            value={inlineTimeEdit.value}
+            onChange={(e) =>
+              setInlineTimeEdit((cur) => (cur ? { ...cur, value: e.target.value } : null))
+            }
+            onBlur={() => commitInlineTimeEdit(s, 'end', inlineTimeEdit.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitInlineTimeEdit(s, 'end', inlineTimeEdit.value);
+              } else if (e.key === 'Escape') {
+                setInlineTimeEdit(null);
+              }
+            }}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.72rem',
+              padding: '1px 4px',
+              borderRadius: 4,
+              border: '1px solid var(--accent-terracotta)',
+              background: 'var(--bg-surface)',
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{
+              padding: '0 3px',
+              fontSize: 'inherit',
+              fontWeight: 600,
+              fontFamily: 'var(--font-mono)',
+              textDecoration: 'underline dotted',
+              textUnderlineOffset: 2,
+            }}
+            title="Click to edit end time"
+            onClick={(e) => {
+              e.stopPropagation();
+              setInlineTimeEdit({
+                stepId: s.id,
+                field: 'end',
+                value: minToTimeInput(s.endMin),
+              });
+            }}
+          >
+            {formatTimeMin(s.endMin)}
+          </button>
+        )}
+      </span>
+    );
   };
 
   const toLibraryStepApplianceId = (applianceId: string): string => {
@@ -1593,9 +1752,7 @@ export function App() {
                           {s.title}
                         </div>
                         <div className="upnext-sub">
-                          <span className="mono" style={{ fontWeight: 600 }}>
-                            {formatTimeMin(s.startMin)}–{formatTimeMin(s.endMin)}
-                          </span>
+                          {renderEditableTimeRange(s)}
                           <span>· {formatDuration(s.durationMin + (s.addedMin || 0))}</span>
                           <span>· {app?.name}</span>
                           {s.temperature !== undefined && (
@@ -1605,6 +1762,19 @@ export function App() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          style={{ padding: 4 }}
+                          title="Edit full step (duration, appliance, mode, dependencies)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedStepId(s.id);
+                            setEditingStep({ step: s, parentItemId: activeDishGroup.item.id });
+                          }}
+                        >
+                          <Edit3 size={12} />
+                        </button>
                         {s.status === 'pending' && s.requiresTimer === false && (
                           <>
                             <button
@@ -1868,9 +2038,7 @@ export function App() {
                         <div className="upnext-info">
                           <div className="upnext-title">{s.title}</div>
                           <div className="upnext-sub">
-                            <span className="mono" style={{ fontWeight: 600 }}>
-                              {formatTimeMin(s.startMin)}
-                            </span>
+                            {renderEditableTimeRange(s)}
                             <span>· {formatDuration(s.durationMin)}</span>
                             <span>· {app?.name}</span>
                             {s.temperature !== undefined && (
@@ -1885,6 +2053,19 @@ export function App() {
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            style={{ padding: 4 }}
+                            title="Edit full step (duration, appliance, mode, dependencies)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedStepId(s.id);
+                              setEditingStep({ step: s });
+                            }}
+                          >
+                            <Edit3 size={12} />
+                          </button>
                           {startsIn <= 0 && (
                             <span
                               style={{

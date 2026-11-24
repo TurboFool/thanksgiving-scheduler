@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.12.0] — 2026-11-23
+
+### Added
+- **Inline Kitchen Mode Start/End Time Editing (`App.tsx`)**: In both **Up Next** and **Dish Steps**, clicking any step's start time or end time opens an inline time picker (`HH:MM`) for exact minute-level rescheduling (undoable via Undo).
+- **Explicit Edit Step Button**: Added a pencil **Edit Step** button directly on each Kitchen Mode step row to open `StepModal` for editing prep duration, appliance, mode, or dependencies.
+
+---
+
 ## [2.11.1] — 2026-11-23
 
 ### Fixed
