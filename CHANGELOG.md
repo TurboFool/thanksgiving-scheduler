@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.3] — 2026-11-24
+
+### Improved
+- **Pinned Gemini Running Status Indicator (`GeminiModal.tsx`)**: Moved the active Gemini running status (`verifyStatus` / `Evaluating...` / `Generating...`) into the pinned `.modal-footer` to the left of the **Close** button so it remains visible when chat replies scroll the modal body.
+
+---
+
 ## [2.14.2] — 2026-11-24
 
 ### Improved

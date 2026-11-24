@@ -677,7 +677,22 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
           <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
             Scheduling &amp; cascading math runs 100% locally and deterministically.
           </span>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {loading && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  color: 'var(--accent-sage)',
+                }}
+              >
+                <Sparkles size={14} />
+                {verifyStatus || (tab === 'paste' ? 'Generating...' : 'Evaluating...')}
+              </span>
+            )}
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Close
             </button>
