@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.1] — 2026-11-24
+
+### Fixed & Improved
+- **Gemini Mode Steering & Context (`gemini.ts`, `GeminiModal.tsx`)**:
+  - Updated `processMealItemWithGemini` to include appliance `supportedModes` and `applianceMode`/`modePreference` in step schemas.
+  - Updated `evaluateAndAdjustScheduleWithGemini` to include step `notes`, dish notes, and scheduler `effectiveMode`/`modeDecisionNote`, instructing Gemini to infer missing modes (such as `Convection`) from notes and explicitly explain *how and why* one mode was chosen over another in `reply` and `reason`.
+  - Displayed `applianceMode` on proposed timeline adjustments in `GeminiModal`.
+- **Preferred Mode Steering & Fallback Explanations (`scheduler.ts`, `types.ts`, `App.tsx`, `GanttTimeline.tsx`, `planFormatter.ts`, `index.css`)**:
+  - Updated `computeSchedule` to strongly steer `preferred`-mode steps to mode-supporting appliances whenever they meet the target finish time, falling back only if busy/late or to share a slot, and recording `effectiveMode` and `modeDecisionNote`.
+  - Surfaced `modeDecisionNote` via `.pill.mode-fallback` (`ⓘ`) badges and tooltips on step cards, Gantt bars, and exported/printed plans.
+
+---
+
 ## [2.14.0] — 2026-11-24
 
 ### Added & Improved

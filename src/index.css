@@ -536,6 +536,12 @@ textarea {
   border: 1px solid rgba(55, 48, 163, 0.16);
 }
 
+.pill.mode-fallback {
+  background: var(--status-amber-soft);
+  color: var(--status-amber);
+  border: 1px dashed rgba(180, 83, 9, 0.45);
+}
+
 .pill.transition-preheat {
   background: #fff4ed;
   color: #c2410c;

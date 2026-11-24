@@ -441,6 +441,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                     <div key={idx}>
                       • <strong>{u.stepTitle}</strong>
                       {u.applianceId !== undefined ? ` → ${u.applianceId || 'Unassigned'}` : ''}
+                      {u.applianceMode ? ` · ${u.applianceMode}${u.modePreference === 'required' ? ' (req)' : ''}` : ''}
                       {u.durationMin !== undefined ? ` · ${u.durationMin}m` : ''}
                       {u.temperature !== undefined ? ` · ${u.temperature}°F` : ''}
                       {u.slotsRequired !== undefined ? ` · ${u.slotsRequired} slots` : ''} —{' '}

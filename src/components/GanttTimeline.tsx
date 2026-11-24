@@ -707,8 +707,10 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                               if (suppressClickRef.current) return;
                               onSelectStep(s);
                             }}
-                            title={`${s.title} (${formatTimeMin(s.startMin)} – ${formatTimeMin(s.endMin)})\n${formatApplianceWithMode(app.name, s.applianceMode)}${
+                            title={`${s.title} (${formatTimeMin(s.startMin)} – ${formatTimeMin(s.endMin)})\n${formatApplianceWithMode(app.name, s.effectiveMode ?? s.applianceMode)}${
                               s.temperature !== undefined ? ` @ ${s.temperature}°F` : ''
+                            }${
+                              s.modeDecisionNote ? `\nMode Note: ${s.modeDecisionNote}` : ''
                             }${
                               trans
                                 ? `\n${trans.type === 'preheat' ? 'Preheat' : 'Cool down'}: ${trans.durationMin}m (${trans.fromTemp}°F → ${trans.toTemp}°F)`
@@ -768,9 +770,14 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                                     >
                                       {s.title}
                                     </span>
-                                    {s.applianceMode && (
-                                      <span className="pill mode" style={{ fontSize: '0.62rem', padding: '0 4px', flexShrink: 0 }}>
-                                        {s.applianceMode}
+                                    {(s.effectiveMode || s.applianceMode) && (
+                                      <span
+                                        className={`pill ${s.modeDecisionNote ? 'mode-fallback' : 'mode'}`}
+                                        style={{ fontSize: '0.62rem', padding: '0 4px', flexShrink: 0 }}
+                                        title={s.modeDecisionNote || `Mode: ${s.effectiveMode ?? s.applianceMode}`}
+                                      >
+                                        {s.effectiveMode || s.applianceMode}
+                                        {s.modeDecisionNote ? ' ⓘ' : ''}
                                       </span>
                                     )}
                                     <span
@@ -821,13 +828,17 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                           </div>
                           <div className="task-bar-sub">
                             <span className="mono">{formatDuration(s.endMin - s.startMin)}</span>
-                            {s.applianceMode && (
+                            {(s.effectiveMode || s.applianceMode) && (
                               <span
-                                className="pill mode"
+                                className={`pill ${s.modeDecisionNote ? 'mode-fallback' : 'mode'}`}
                                 style={{ padding: '0 4px', fontSize: '0.64rem' }}
-                                title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}
+                                title={
+                                  s.modeDecisionNote ??
+                                  `Mode: ${s.effectiveMode ?? s.applianceMode} (${s.modePreference ?? 'preferred'})`
+                                }
                               >
-                                {s.applianceMode}
+                                {s.effectiveMode || s.applianceMode}
+                                {s.modeDecisionNote ? ' ⓘ' : ''}
                               </span>
                             )}
                             {s.pinnedStartMin !== undefined && (

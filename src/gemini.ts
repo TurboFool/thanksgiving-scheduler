@@ -624,7 +624,9 @@ export async function processMealItemWithGemini(
   const appSummary = appliances
     .map(
       (a) =>
-        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}", capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
+        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}"${
+          a.supportedModes?.length ? `, supportedModes: [${a.supportedModes.map((m) => `"${m}"`).join(', ')}]` : ''
+        }, capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
           a.hasTemperature ? `, tolerance: ±${a.tempTolerance}°F` : ''
         }`
     )
@@ -655,6 +657,8 @@ export async function processMealItemWithGemini(
             title: s.title,
             durationMin: s.durationMin,
             applianceId: s.applianceId,
+            ...(s.applianceMode ? { applianceMode: s.applianceMode } : {}),
+            ...(s.modePreference ? { modePreference: s.modePreference } : {}),
             slotsRequired: s.slotsRequired,
             temperature: s.temperature ?? null,
             dependencies: s.dependencies,
@@ -687,6 +691,7 @@ ${aiGuidance}
 - Set "requiresTimer": false for untimed manual prep tasks (e.g., peeling/chopping apples, setting out ingredients) that only need a start-time alert without a countdown alarm; set "requiresTimer": true for active cooking/baking/simmering/boiling steps that need a countdown timer.
 - When a step must happen CONCURRENTLY relative to an ongoing timer (e.g., "add apples 1 hour before a 2-hour cider finishes" or "baste 30 min after roast starts"), do NOT put that timer in "dependencies" (which forces waiting until it ends); instead use "relativeDeps": [{ "stepId": "<target-id>", "anchor": "before_end" | "after_start" | "after_end", "offsetMin": 60 }].
 - Use "category:Oven" (or "" if unsure) for oven steps in multi-oven kitchens, and specific IDs like "stovetop" or "counter" for stovetop/counter prep.
+- Whenever a step uses a specific operating mode (e.g., "Convection", "Bake", "Broil", "Air Fryer", "Toast") matching an appliance's supportedModes, set "applianceMode" and "modePreference": "preferred" (or "required" if strictly needed).
 
 Dish Name: ${item.name}
 Course: ${item.course}
@@ -710,6 +715,8 @@ Return ONLY a valid JSON object with this exact shape:
       "dish": "${item.name}",
       "durationMin": 7,
       "applianceId": "stovetop",
+      "applianceMode": "optional-mode-name",
+      "modePreference": "preferred",
       "slotsRequired": 1,
       "temperature": null,
       "dependencies": [],
@@ -1151,25 +1158,31 @@ export async function evaluateAndAdjustScheduleWithGemini(
           ? ` [FINISHES ${s.endMin - targetDinnerMin}m PAST SERVE]`
           : '';
       const modeTag = s.applianceMode
-        ? `, mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`
+        ? `, requestedMode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})${
+            s.effectiveMode && s.effectiveMode !== s.applianceMode
+              ? ` -> effectiveMode: ${s.effectiveMode}`
+              : ''
+          }`
         : '';
+      const decisionTag = s.modeDecisionNote ? ` [MODE FALLBACK: ${s.modeDecisionNote}]` : '';
+      const notesSnippet = s.notes ? `, notes: "${s.notes.slice(0, 140)}"` : '';
       return `- stepId: "${s.id}", dish: "${s.dish}", title: "${s.title}", status: ${s.status}, time: ${formatTimeMin(
         s.startMin
-      )}–${formatTimeMin(s.endMin)} (${s.durationMin}m), location: ${loc}${modeTag}, slots: ${s.slotsRequired}${
+      )}–${formatTimeMin(s.endMin)} (${s.durationMin}m), location: ${loc}${modeTag}${decisionTag}, slots: ${s.slotsRequired}${
         s.temperature ? `, temp: ${s.temperature}°F` : ''
       }${s.isDelayed ? ` [DELAYED +${s.delayMin}m]` : ''}${lateTag}${
         s.canPrepEarly ? ` [CAN PREP EARLY]` : ''
-      }`;
+      }${notesSnippet}`;
     })
     .join('\n');
 
   const itemSummary = items
-    .map(
-      (it) =>
-        `- ${it.name} (${it.course}, finish: ${it.finishConstraint.mode}${
-          it.manualChangeLog.length > 0 ? `, ${it.manualChangeLog.length} manual edit(s)` : ''
-        })`
-    )
+    .map((it) => {
+      const noteHint = (it.rawNotes || it.convertedNotes || '').trim().slice(0, 160);
+      return `- ${it.name} (${it.course}, finish: ${it.finishConstraint.mode}${
+        it.manualChangeLog.length > 0 ? `, ${it.manualChangeLog.length} manual edit(s)` : ''
+      })${noteHint ? ` — notes: "${noteHint}"` : ''}`;
+    })
     .join('\n');
 
   const systemContext = `You are ThymeLine's interactive culinary schedule optimizer.
@@ -1187,16 +1200,17 @@ ${stepSummary}
 
 Evaluate the current schedule for:
 1. Any UNASSIGNED steps that need an appliance (or "category:<Name>") assigned.
-2. Appliance modes & exclusivity: an appliance can only run ONE mode at a time (e.g., Air Fryer vs Toaster on a Toaster Oven, or Convection vs Bake on an Oven). Assign dishes that prefer/require a mode (like Convection) to an appliance supporting that mode, and avoid overlapping conflicting modes on the same appliance.
-3. Oven/appliance rack bottlenecks, temperature conflicts, or steps that can be spread across multiple appliances in the same category.
-4. Steps finishing past Target Serve Time, excessive delays, or dishes that could be prepped early / moved to an earlier slot (use pinnedStartMin in minutes from midnight, or null to unpin).
-5. Any specific corrections or preferences the user asks for in the conversation.
+2. Appliance modes & exclusivity: an appliance can only run ONE mode at a time (e.g., Air Fryer vs Toaster on a Toaster Oven, or Convection vs Bake on an Oven). Check each step's notes and dish notes: if a step mentions a mode (like Convection, Bake, Broil, Air Fryer) and doesn't yet have "applianceMode" set, set "applianceMode" (matching an appliance's supportedModes) and "modePreference" ("preferred" or "required"), and assign it to an appliance supporting that mode.
+3. Mode trade-off & decision transparency: whenever you choose one mode over another supported/preferred mode (e.g., keeping Convection on Bottom Oven vs. falling back to Bake on Top Oven, or adjusting temperature for Convection vs. Conventional), explicitly explain HOW and WHY in both "reply" and each update's "reason".
+4. Oven/appliance rack bottlenecks, temperature conflicts (including preheat/cooldown gaps), or steps that can be spread across multiple appliances in the same category.
+5. Steps finishing past Target Serve Time, excessive delays, or dishes that could be prepped early / moved to an earlier slot (use pinnedStartMin in minutes from midnight, or null to unpin).
+6. Any specific corrections or preferences the user asks for in the conversation.
 
 IMPORTANT: If there is a conflict you CANNOT resolve automatically without a user decision (e.g., two dishes require incompatible oven temperatures or modes at the exact same time with no free oven, or total prep/cook exceeds available time), list concise questions in "unresolvedQuestions" so the user can choose.
 
 Return ONLY a valid JSON object:
 {
-  "reply": "Clear, concise summary of conflicts, unassigned steps, and your recommended plan (under 200 words).",
+  "reply": "Clear, concise summary of conflicts, mode decisions (how & why one mode was chosen over another), unassigned steps, and your recommended plan (under 240 words).",
   "recommendedUpdates": [
     {
       "stepId": "exact-step-id-from-above",
@@ -1208,7 +1222,7 @@ Return ONLY a valid JSON object:
       "slotsRequired": 1,
       "temperature": 350,
       "pinnedStartMin": null,
-      "reason": "Brief reason for this change"
+      "reason": "Brief reason for this change, including why this mode/appliance was chosen"
     }
   ],
   "unresolvedQuestions": ["Optional question if a trade-off requires user input"]

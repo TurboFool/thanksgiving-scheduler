@@ -1932,9 +1932,16 @@ export function App() {
                         {renderEditableTimeRange(s)}
                         <span>· {formatDuration(s.durationMin + (s.addedMin || 0))}</span>
                         <span>· {app?.name ?? (s.applianceId.startsWith('category:') ? `Any ${s.applianceId.slice(9)}` : 'Needs Location')}</span>
-                        {s.applianceMode && (
-                          <span className="pill mode" title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}>
-                            {s.applianceMode}
+                        {(s.effectiveMode || s.applianceMode) && (
+                          <span
+                            className={`pill ${s.modeDecisionNote ? 'mode-fallback' : 'mode'}`}
+                            title={
+                              s.modeDecisionNote ??
+                              `Mode: ${s.effectiveMode ?? s.applianceMode} (${s.modePreference ?? 'preferred'})`
+                            }
+                          >
+                            {s.effectiveMode || s.applianceMode}
+                            {s.modeDecisionNote ? ' ⓘ' : ''}
                           </span>
                         )}
                         {s.temperature !== undefined && (
@@ -1993,9 +2000,16 @@ export function App() {
                               <div className="timer-title" title={s.title}>{s.title}</div>
                               <div className="timer-meta">
                                 <span>{app?.name}</span>
-                                {s.applianceMode && (
-                                  <span className="pill mode" title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}>
-                                    {s.applianceMode}
+                                {(s.effectiveMode || s.applianceMode) && (
+                                  <span
+                                    className={`pill ${s.modeDecisionNote ? 'mode-fallback' : 'mode'}`}
+                                    title={
+                                      s.modeDecisionNote ??
+                                      `Mode: ${s.effectiveMode ?? s.applianceMode} (${s.modePreference ?? 'preferred'})`
+                                    }
+                                  >
+                                    {s.effectiveMode || s.applianceMode}
+                                    {s.modeDecisionNote ? ' ⓘ' : ''}
                                   </span>
                                 )}
                                 {isUntimed && (
@@ -2208,9 +2222,16 @@ export function App() {
                           {renderEditableTimeRange(s)}
                           <span>· {formatDuration(s.durationMin)}</span>
                           <span>· {app?.name ?? (s.applianceId.startsWith('category:') ? `Any ${s.applianceId.slice(9)}` : 'Needs Location')}</span>
-                          {s.applianceMode && (
-                            <span className="pill mode" title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}>
-                              {s.applianceMode}
+                          {(s.effectiveMode || s.applianceMode) && (
+                            <span
+                              className={`pill ${s.modeDecisionNote ? 'mode-fallback' : 'mode'}`}
+                              title={
+                                s.modeDecisionNote ??
+                                `Mode: ${s.effectiveMode ?? s.applianceMode} (${s.modePreference ?? 'preferred'})`
+                              }
+                            >
+                              {s.effectiveMode || s.applianceMode}
+                              {s.modeDecisionNote ? ' ⓘ' : ''}
                             </span>
                           )}
                           {s.temperature !== undefined && (

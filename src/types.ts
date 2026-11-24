@@ -193,6 +193,10 @@ export interface ScheduledStep extends MealStep {
   delayMin: number;
   /** Required preheat or cooldown transition immediately before this step on the same appliance */
   transitionBefore?: TempTransition;
+  /** Actual operating mode resolved by the scheduler (may differ from applianceMode on fallback) */
+  effectiveMode?: string;
+  /** Explanation when the scheduler fell back from a preferred applianceMode */
+  modeDecisionNote?: string;
 }
 
 export interface ScheduleResult {

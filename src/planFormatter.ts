@@ -18,7 +18,7 @@ function getApplianceLabel(step: ScheduledStep, appMap: Map<string, Appliance>):
     : resolved.startsWith('category:')
     ? `Any ${resolved.slice('category:'.length)}`
     : appMap.get(resolved)?.name ?? resolved;
-  return formatApplianceWithMode(baseName, step.applianceMode);
+  return formatApplianceWithMode(baseName, step.effectiveMode ?? step.applianceMode);
 }
 
 function formatStepLine(
@@ -36,10 +36,11 @@ function formatStepLine(
   const transTag = s.transitionBefore
     ? ` [${s.transitionBefore.type === 'preheat' ? 'Preheat' : 'Cool down'} +${s.transitionBefore.durationMin}m]`
     : '';
+  const modeNoteTag = s.modeDecisionNote ? ` [${s.modeDecisionNote}]` : '';
   const timerTag = s.requiresTimer === false ? ' [Start Alert]' : '';
   const dishTag = options.mode !== 'per_dish' && s.dish ? ` (${s.dish})` : '';
 
-  lines.push(`${box}${timeRange} (${dur}) — ${s.title}${dishTag} · ${appLabel}${temp}${transTag}${timerTag}`);
+  lines.push(`${box}${timeRange} (${dur}) — ${s.title}${dishTag} · ${appLabel}${temp}${transTag}${modeNoteTag}${timerTag}`);
 
   if (options.includeRecipesAndNotes) {
     if (s.relativeDeps && s.relativeDeps.length > 0) {

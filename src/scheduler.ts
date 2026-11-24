@@ -365,13 +365,29 @@ export function computeSchedule(
       continue;
     }
 
-    let bestEnd = -Infinity;
-    let bestRow = 0;
-    let bestApp = candidatesApps[0];
+    let bestMatchEnd = -Infinity;
+    let bestMatchRow = 0;
+    let bestMatchApp: Appliance | null = null;
+    let bestMatchMode: string | undefined = step.applianceMode;
+
+    let bestAnyEnd = -Infinity;
+    let bestAnyRow = 0;
+    let bestAnyApp = candidatesApps[0];
+    let bestAnyMode: string | undefined = step.applianceMode;
+
+    const normReqMode = (step.applianceMode || '').trim();
+    const isPreferredMode = Boolean(normReqMode) && (step.modePreference ?? 'preferred') === 'preferred';
 
     for (const app of candidatesApps) {
       const appIntervals = idealIntervalsByApp.get(app.id) ?? [];
       if (!idealIntervalsByApp.has(app.id)) idealIntervalsByApp.set(app.id, appIntervals);
+
+      const supportsReq = !normReqMode || applianceSupportsMode(app, normReqMode);
+      const tryMode = supportsReq
+        ? step.applianceMode
+        : isPreferredMode
+        ? app.supportedModes?.[0]
+        : step.applianceMode;
 
       const candidates = new Set<number>([latestEnd]);
       for (const iv of appIntervals) {
@@ -395,35 +411,47 @@ export function computeSchedule(
           app,
           appIntervals,
           undefined,
-          step.applianceMode
+          tryMode
         );
         if (check.valid) {
-          if (candEnd > bestEnd) {
-            bestEnd = candEnd;
-            bestRow = check.row;
-            bestApp = app;
+          if (supportsReq && candEnd > bestMatchEnd) {
+            bestMatchEnd = candEnd;
+            bestMatchRow = check.row;
+            bestMatchApp = app;
+            bestMatchMode = tryMode;
+          }
+          if (candEnd > bestAnyEnd) {
+            bestAnyEnd = candEnd;
+            bestAnyRow = check.row;
+            bestAnyApp = app;
+            bestAnyMode = tryMode;
           }
           break;
         }
       }
     }
 
-    const chosenEnd = bestEnd === -Infinity ? latestEnd : bestEnd;
+    const useMatch = bestMatchApp !== null && bestMatchEnd > -Infinity;
+    const chosenEnd = useMatch ? bestMatchEnd : bestAnyEnd === -Infinity ? latestEnd : bestAnyEnd;
     const chosenStart = chosenEnd - duration;
+    const chosenApp = useMatch ? bestMatchApp! : bestAnyApp;
+    const chosenRow = useMatch ? bestMatchRow : bestAnyRow;
+    const chosenMode = useMatch ? bestMatchMode : bestAnyMode;
+
     idealStart.set(id, chosenStart);
     idealEnd.set(id, chosenEnd);
-    idealApp.set(id, bestApp.id);
-    const targetIntervals = idealIntervalsByApp.get(bestApp.id) ?? [];
+    idealApp.set(id, chosenApp.id);
+    const targetIntervals = idealIntervalsByApp.get(chosenApp.id) ?? [];
     targetIntervals.push({
       stepId: id,
       start: chosenStart,
       end: chosenEnd,
       slots: step.slotsRequired,
       temp: step.temperature,
-      mode: step.applianceMode,
-      row: bestRow,
+      mode: chosenMode,
+      row: chosenRow,
     });
-    idealIntervalsByApp.set(bestApp.id, targetIntervals);
+    idealIntervalsByApp.set(chosenApp.id, targetIntervals);
   }
 
   // Resolve time-relative concurrent dependencies in forward topo order for ideal plan
@@ -487,6 +515,8 @@ export function computeSchedule(
   const liveEnd = new Map<string, number>();
   const liveRow = new Map<string, number>();
   const liveApp = new Map<string, string>();
+  const liveEffectiveMode = new Map<string, string | undefined>();
+  const liveModeNote = new Map<string, string | undefined>();
 
   // First, pin 'done', 'running', and 'paused' steps so their real-time occupancy is respected
   for (const id of topoOrder) {
@@ -531,13 +561,24 @@ export function computeSchedule(
       liveEnd.set(id, e);
       liveRow.set(id, check.row);
       liveApp.set(id, app.id);
+      const effDoneMode =
+        step.applianceMode && !applianceSupportsMode(app, step.applianceMode)
+          ? app.supportedModes?.[0]
+          : step.applianceMode;
+      liveEffectiveMode.set(id, effDoneMode);
+      if (step.applianceMode && !applianceSupportsMode(app, step.applianceMode)) {
+        liveModeNote.set(
+          id,
+          `${app.name} does not support ${step.applianceMode}; using ${effDoneMode || 'default'}`
+        );
+      }
       appIntervals.push({
         stepId: id,
         start: s,
         end: e,
         slots: step.slotsRequired,
         temp: step.temperature,
-        mode: step.applianceMode,
+        mode: effDoneMode,
         row: check.row,
       });
     } else {
@@ -548,6 +589,10 @@ export function computeSchedule(
         step.requiresTimer === false
           ? Math.max(s + plannedDur, nowMin + 1)
           : Math.max(s + 1, nowMin + remMin);
+      const effRunMode =
+        step.applianceMode && !applianceSupportsMode(app, step.applianceMode)
+          ? app.supportedModes?.[0]
+          : step.applianceMode;
       const check = findValidPlacement(
         s,
         e,
@@ -556,19 +601,26 @@ export function computeSchedule(
         app,
         appIntervals,
         undefined,
-        step.applianceMode
+        effRunMode
       );
       liveStart.set(id, s);
       liveEnd.set(id, e);
       liveRow.set(id, check.row);
       liveApp.set(id, app.id);
+      liveEffectiveMode.set(id, effRunMode);
+      if (step.applianceMode && !applianceSupportsMode(app, step.applianceMode)) {
+        liveModeNote.set(
+          id,
+          `${app.name} does not support ${step.applianceMode}; using ${effRunMode || 'default'}`
+        );
+      }
       appIntervals.push({
         stepId: id,
         start: s,
         end: e,
         slots: step.slotsRequired,
         temp: step.temperature,
-        mode: step.applianceMode,
+        mode: effRunMode,
         row: check.row,
       });
     }
@@ -624,9 +676,17 @@ export function computeSchedule(
       continue;
     }
 
-    let bestStart = Infinity;
-    let bestRow = 0;
-    let bestApp = candidatesApps[0];
+    const stepTargetEnd = getStepTargetEnd(step, targetDinnerMin).latestEnd;
+    const normReqMode = (step.applianceMode || '').trim();
+    const isPreferredMode = Boolean(normReqMode) && (step.modePreference ?? 'preferred') === 'preferred';
+
+    type PlacementCand = { start: number; row: number; app: Appliance; mode: string | undefined };
+    let bestExact: PlacementCand | null = null;
+    let bestAny: PlacementCand | null = null;
+
+    const sharedAnchors = step.relativeDeps?.length
+      ? new Set(step.relativeDeps.map((r) => r.stepId))
+      : undefined;
 
     for (const app of candidatesApps) {
       const appIntervals = liveIntervalsByApp.get(app.id) ?? [];
@@ -644,50 +704,107 @@ export function computeSchedule(
       }
       const sortedCandidates = Array.from(candidates).sort((a, b) => a - b);
 
-      const sharedAnchors = step.relativeDeps?.length
-        ? new Set(step.relativeDeps.map((r) => r.stepId))
-        : undefined;
+      const supportsReq = !normReqMode || applianceSupportsMode(app, normReqMode);
+      const modesToTry: Array<string | undefined> = [];
+      if (supportsReq) {
+        modesToTry.push(step.applianceMode);
+        if (isPreferredMode && app.supportedModes?.length) {
+          const fallbackM = app.supportedModes.find(
+            (m) => m.trim().toLowerCase() !== normReqMode.toLowerCase()
+          );
+          if (fallbackM) modesToTry.push(fallbackM);
+        }
+      } else {
+        modesToTry.push(isPreferredMode ? app.supportedModes?.[0] : step.applianceMode);
+      }
 
-      for (const candStart of sortedCandidates) {
-        const candEnd = candStart + duration;
-        const check = findValidPlacement(
-          candStart,
-          candEnd,
-          step.slotsRequired,
-          step.temperature,
-          app,
-          appIntervals,
-          sharedAnchors,
-          step.applianceMode
-        );
-        if (check.valid) {
-          if (candStart < bestStart) {
-            bestStart = candStart;
-            bestRow = check.row;
-            bestApp = app;
+      for (const tryMode of modesToTry) {
+        for (const candStart of sortedCandidates) {
+          const candEnd = candStart + duration;
+          const check = findValidPlacement(
+            candStart,
+            candEnd,
+            step.slotsRequired,
+            step.temperature,
+            app,
+            appIntervals,
+            sharedAnchors,
+            tryMode
+          );
+          if (check.valid) {
+            const isExactMatch =
+              Boolean(normReqMode) &&
+              supportsReq &&
+              (tryMode || '').trim().toLowerCase() === normReqMode.toLowerCase();
+            if (isExactMatch && (!bestExact || candStart < bestExact.start)) {
+              bestExact = { start: candStart, row: check.row, app, mode: tryMode };
+            }
+            if (!bestAny || candStart < bestAny.start) {
+              bestAny = { start: candStart, row: check.row, app, mode: tryMode };
+            }
+            break;
           }
-          break;
         }
       }
     }
 
-    const chosenStart = bestStart === Infinity ? earliest : bestStart;
+    let chosen: PlacementCand;
+    if (
+      bestExact &&
+      (bestExact.start + duration <= stepTargetEnd ||
+        !bestAny ||
+        bestAny.start + duration > stepTargetEnd)
+    ) {
+      chosen = bestExact;
+    } else if (bestAny) {
+      chosen = bestAny;
+    } else {
+      chosen = { start: earliest, row: 0, app: candidatesApps[0], mode: step.applianceMode };
+    }
+
+    const chosenStart = chosen.start;
     const chosenEnd = chosenStart + duration;
     liveStart.set(id, chosenStart);
     liveEnd.set(id, chosenEnd);
-    liveRow.set(id, bestRow);
-    liveApp.set(id, bestApp.id);
-    const targetIntervals = liveIntervalsByApp.get(bestApp.id) ?? [];
+    liveRow.set(id, chosen.row);
+    liveApp.set(id, chosen.app.id);
+    liveEffectiveMode.set(id, chosen.mode);
+
+    if (normReqMode) {
+      const chosenSupportsReq = applianceSupportsMode(chosen.app, normReqMode);
+      const modeChanged = (chosen.mode || '').trim().toLowerCase() !== normReqMode.toLowerCase();
+      if (!chosenSupportsReq || modeChanged) {
+        const displayMode = chosen.mode || 'default';
+        if (bestExact && bestExact.app.id !== chosen.app.id) {
+          liveModeNote.set(
+            id,
+            `Using ${displayMode} on ${chosen.app.name} (${bestExact.app.name} busy/late for ${step.applianceMode})`
+          );
+        } else if (bestExact && bestExact.app.id === chosen.app.id) {
+          liveModeNote.set(
+            id,
+            `Using ${displayMode} on ${chosen.app.name} instead of preferred ${step.applianceMode} to share oven`
+          );
+        } else {
+          liveModeNote.set(
+            id,
+            `Using ${displayMode} on ${chosen.app.name} (${chosen.app.name} does not support ${step.applianceMode})`
+          );
+        }
+      }
+    }
+
+    const targetIntervals = liveIntervalsByApp.get(chosen.app.id) ?? [];
     targetIntervals.push({
       stepId: id,
       start: chosenStart,
       end: chosenEnd,
       slots: step.slotsRequired,
       temp: step.temperature,
-      mode: step.applianceMode,
-      row: bestRow,
+      mode: chosen.mode,
+      row: chosen.row,
     });
-    liveIntervalsByApp.set(bestApp.id, targetIntervals);
+    liveIntervalsByApp.set(chosen.app.id, targetIntervals);
   }
 
   // 5. Compute projected dinner, earliest start, and slack
@@ -775,6 +892,8 @@ export function computeSchedule(
       isDelayed: delayMin > 0,
       delayMin,
       transitionBefore,
+      effectiveMode: liveEffectiveMode.get(s.id) ?? s.applianceMode,
+      modeDecisionNote: liveModeNote.get(s.id),
     };
   });
 
