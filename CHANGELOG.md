@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.6] — 2026-11-24
+
+### Improved
+- **Collapsible Dishes Filter in Kitchen Mode (`App.tsx`)**: Made the **Dishes** filter section header clickable with a chevron toggle to collapse/expand the dish chip list and save vertical space (while keeping any active dish filter visible as a compact pill when collapsed).
+
+---
+
 ## [2.14.5] — 2026-11-24
 
 ### Fixed & Added

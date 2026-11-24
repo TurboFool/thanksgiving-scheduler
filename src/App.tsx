@@ -4,6 +4,8 @@ import {
   BookOpen,
   Calendar,
   Check,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Cloud,
   CloudDownload,
@@ -114,6 +116,7 @@ export function App() {
   } | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedDish, setSelectedDish] = useState<string | null>(null);
+  const [dishesExpanded, setDishesExpanded] = useState(true);
   const [showApplianceModal, setShowApplianceModal] = useState(false);
   const [showGeminiModal, setShowGeminiModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
@@ -1665,7 +1668,41 @@ export function App() {
             {dishGroups.length > 0 && (
               <div>
                 <div className="section-label">
-                  <span>Dishes ({dishGroups.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => setDishesExpanded((v) => !v)}
+                    aria-expanded={dishesExpanded}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      font: 'inherit',
+                      letterSpacing: 'inherit',
+                      textTransform: 'inherit',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                    }}
+                    title={dishesExpanded ? 'Collapse dishes list' : 'Expand dishes list'}
+                  >
+                    {dishesExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    <span>Dishes ({dishGroups.length})</span>
+                    {!dishesExpanded && activeDishGroup && (
+                      <span
+                        className="pill"
+                        style={{
+                          textTransform: 'none',
+                          letterSpacing: 'normal',
+                          fontSize: '0.68rem',
+                          marginLeft: 4,
+                        }}
+                      >
+                        {activeDishGroup.item.name}
+                      </span>
+                    )}
+                  </button>
                   {activeDishGroup && (
                     <button
                       type="button"
@@ -1677,32 +1714,34 @@ export function App() {
                     </button>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 4 }}>
-                  <button
-                    type="button"
-                    className={`btn ${activeDishGroup === null ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '3px 9px', fontSize: '0.73rem' }}
-                    onClick={() => setSelectedDish(null)}
-                  >
-                    All ({schedule.steps.length})
-                  </button>
-                  {dishGroups.map((g) => (
+                {dishesExpanded && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 4 }}>
                     <button
-                      key={g.item.id}
                       type="button"
-                      className={`btn ${
-                        activeDishGroup?.item.id === g.item.id ? 'btn-primary' : 'btn-secondary'
-                      }`}
+                      className={`btn ${activeDishGroup === null ? 'btn-primary' : 'btn-secondary'}`}
                       style={{ padding: '3px 9px', fontSize: '0.73rem' }}
-                      onClick={() =>
-                        setSelectedDish((cur) => (cur === g.item.name ? null : g.item.name))
-                      }
+                      onClick={() => setSelectedDish(null)}
                     >
-                      {g.item.name} ({g.count})
-                      {g.item.manualChangeLog.length > 0 ? ' •' : ''}
+                      All ({schedule.steps.length})
                     </button>
-                  ))}
-                </div>
+                    {dishGroups.map((g) => (
+                      <button
+                        key={g.item.id}
+                        type="button"
+                        className={`btn ${
+                          activeDishGroup?.item.id === g.item.id ? 'btn-primary' : 'btn-secondary'
+                        }`}
+                        style={{ padding: '3px 9px', fontSize: '0.73rem' }}
+                        onClick={() =>
+                          setSelectedDish((cur) => (cur === g.item.name ? null : g.item.name))
+                        }
+                      >
+                        {g.item.name} ({g.count})
+                        {g.item.manualChangeLog.length > 0 ? ' •' : ''}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
