@@ -6,11 +6,12 @@ interface Interval {
   end: number;
   slots: number;
   temp?: number;
+  mode?: string;
   row: number;
 }
 
 /**
- * Checks whether placing a step with (slots, temp) at [start, end)
+ * Checks whether placing a step with (slots, temp, mode) at [start, end)
  * on `appliance` is valid given existing intervals, and returns an available laneRow.
  */
 function findValidPlacement(
@@ -20,7 +21,8 @@ function findValidPlacement(
   temp: number | undefined,
   appliance: Appliance,
   existing: Interval[],
-  sharedAnchorStepIds?: Set<string>
+  sharedAnchorStepIds?: Set<string>,
+  stepMode?: string
 ): { valid: boolean; row: number } {
   if (slots > appliance.capacity) {
     // Even if misconfigured, allow at row 0 so scheduler never infinite-loops
@@ -33,11 +35,13 @@ function findValidPlacement(
     return { valid: true, row: 0 };
   }
 
-  // Check slot capacity at every critical boundary within [start, end)
+  // Check slot capacity, temperature tolerance, and mode exclusivity at every boundary
   const checkpoints = new Set<number>([start]);
   for (const iv of overlapping) {
     if (iv.start > start && iv.start < end) checkpoints.add(iv.start);
   }
+
+  const normStepMode = (stepMode || '').trim().toLowerCase();
 
   for (const t of checkpoints) {
     let sharesAnchorAtT = false;
@@ -46,6 +50,10 @@ function findValidPlacement(
 
     for (const iv of overlapping) {
       if (iv.start <= t && iv.end > t) {
+        const ivMode = (iv.mode || '').trim().toLowerCase();
+        if (normStepMode !== ivMode && !sharedAnchorStepIds?.has(iv.stepId)) {
+          return { valid: false, row: 0 };
+        }
         usedSlots += iv.slots;
         if (sharedAnchorStepIds?.has(iv.stepId)) {
           sharesAnchorAtT = true;
@@ -236,16 +244,44 @@ export function computeSchedule(
     };
   }
 
-  const getCandidateAppliances = (specId: string): Appliance[] => {
+  const applianceSupportsMode = (app: Appliance, mode: string): boolean => {
+    const norm = mode.trim().toLowerCase();
+    if (!norm) return true;
+    return (app.supportedModes ?? []).some((m) => m.trim().toLowerCase() === norm);
+  };
+
+  const getCandidateAppliances = (
+    specId: string,
+    stepMode?: string,
+    modePreference: 'required' | 'preferred' = 'preferred'
+  ): Appliance[] => {
     if (!specId) return [];
+    const normMode = (stepMode || '').trim();
     if (specId.startsWith('category:')) {
       const cat = specId.slice('category:'.length).trim().toLowerCase();
       const matches = appliances.filter(
         (a) => (a.category || '').trim().toLowerCase() === cat
       );
-      return matches.length > 0 ? matches : [fallbackAppliance];
+      if (matches.length === 0) return [fallbackAppliance];
+      if (!normMode) return matches;
+      const modeMatches = matches.filter((a) => applianceSupportsMode(a, normMode));
+      if (modePreference === 'required') {
+        return modeMatches.length > 0 ? modeMatches : matches;
+      }
+      // Preferred: try mode-matching appliances first, fall back to others if needed
+      return [...modeMatches, ...matches.filter((a) => !applianceSupportsMode(a, normMode))];
     }
-    return [applianceMap.get(specId) ?? fallbackAppliance];
+    const specific = applianceMap.get(specId) ?? fallbackAppliance;
+    if (normMode && modePreference === 'preferred' && !applianceSupportsMode(specific, normMode)) {
+      const sameCat = appliances.filter(
+        (a) =>
+          a.id !== specific.id &&
+          (a.category || '').trim().toLowerCase() === (specific.category || '').trim().toLowerCase() &&
+          applianceSupportsMode(a, normMode)
+      );
+      if (sameCat.length > 0) return [...sameCat, specific];
+    }
+    return [specific];
   };
 
   // 3. Backward Resource-Constrained Pass (Ideal Plan anchored to targetDinnerMin & finishConstraint)
@@ -272,7 +308,11 @@ export function computeSchedule(
       }
     }
 
-    const candidatesApps = getCandidateAppliances(step.applianceId);
+    const candidatesApps = getCandidateAppliances(
+      step.applianceId,
+      step.applianceMode,
+      step.modePreference
+    );
     if (candidatesApps.length === 0) {
       idealStart.set(id, latestEnd - duration);
       idealEnd.set(id, latestEnd);
@@ -302,7 +342,9 @@ export function computeSchedule(
           step.slotsRequired,
           step.temperature,
           app,
-          appIntervals
+          appIntervals,
+          undefined,
+          step.applianceMode
         );
         if (check.valid) {
           if (candEnd > bestEnd) {
@@ -327,6 +369,7 @@ export function computeSchedule(
       end: chosenEnd,
       slots: step.slotsRequired,
       temp: step.temperature,
+      mode: step.applianceMode,
       row: bestRow,
     });
     idealIntervalsByApp.set(bestApp.id, targetIntervals);
@@ -423,7 +466,16 @@ export function computeSchedule(
     if (step.status === 'done') {
       const s = step.actualStartMin ?? idealStart.get(id)!;
       const e = step.actualEndMin ?? s + Math.max(1, step.durationMin);
-      const check = findValidPlacement(s, e, step.slotsRequired, step.temperature, app, appIntervals);
+      const check = findValidPlacement(
+        s,
+        e,
+        step.slotsRequired,
+        step.temperature,
+        app,
+        appIntervals,
+        undefined,
+        step.applianceMode
+      );
       liveStart.set(id, s);
       liveEnd.set(id, e);
       liveRow.set(id, check.row);
@@ -434,6 +486,7 @@ export function computeSchedule(
         end: e,
         slots: step.slotsRequired,
         temp: step.temperature,
+        mode: step.applianceMode,
         row: check.row,
       });
     } else {
@@ -444,7 +497,16 @@ export function computeSchedule(
         step.requiresTimer === false
           ? Math.max(s + plannedDur, nowMin + 1)
           : Math.max(s + 1, nowMin + remMin);
-      const check = findValidPlacement(s, e, step.slotsRequired, step.temperature, app, appIntervals);
+      const check = findValidPlacement(
+        s,
+        e,
+        step.slotsRequired,
+        step.temperature,
+        app,
+        appIntervals,
+        undefined,
+        step.applianceMode
+      );
       liveStart.set(id, s);
       liveEnd.set(id, e);
       liveRow.set(id, check.row);
@@ -455,6 +517,7 @@ export function computeSchedule(
         end: e,
         slots: step.slotsRequired,
         temp: step.temperature,
+        mode: step.applianceMode,
         row: check.row,
       });
     }
@@ -497,7 +560,11 @@ export function computeSchedule(
       }
     }
 
-    const candidatesApps = getCandidateAppliances(step.applianceId);
+    const candidatesApps = getCandidateAppliances(
+      step.applianceId,
+      step.applianceMode,
+      step.modePreference
+    );
     if (candidatesApps.length === 0) {
       liveStart.set(id, earliest);
       liveEnd.set(id, earliest + duration);
@@ -533,7 +600,8 @@ export function computeSchedule(
           step.temperature,
           app,
           appIntervals,
-          sharedAnchors
+          sharedAnchors,
+          step.applianceMode
         );
         if (check.valid) {
           if (candStart < bestStart) {
@@ -559,6 +627,7 @@ export function computeSchedule(
       end: chosenEnd,
       slots: step.slotsRequired,
       temp: step.temperature,
+      mode: step.applianceMode,
       row: bestRow,
     });
     liveIntervalsByApp.set(bestApp.id, targetIntervals);

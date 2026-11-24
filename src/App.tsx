@@ -697,6 +697,13 @@ export function App() {
           return {
             ...s,
             ...(u.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
+            ...(u.applianceMode !== undefined
+              ? { applianceMode: u.applianceMode || undefined }
+              : {}),
+            ...(u.modePreference !== undefined ? { modePreference: u.modePreference } : {}),
+            ...(u.slotsRequired !== undefined
+              ? { slotsRequired: Math.max(1, Math.round(u.slotsRequired)) }
+              : {}),
             ...(u.pinnedStartMin !== undefined
               ? { pinnedStartMin: u.pinnedStartMin === null ? undefined : u.pinnedStartMin }
               : {}),

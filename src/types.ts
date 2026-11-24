@@ -5,6 +5,8 @@ export interface Appliance {
   name: string;
   /** Optional grouping category (e.g. "Oven", "Stovetop", "Counter") for multi-unit balancing */
   category?: string;
+  /** Optional operating modes supported by this appliance (e.g. ["Bake", "Convection"]) */
+  supportedModes?: string[];
   /** Number of simultaneous slots (e.g., oven racks, stovetop burners) */
   capacity: number;
   /** Unit label for slots, e.g. "rack", "burner", "spot" */
@@ -33,6 +35,10 @@ export interface MealStep {
   durationMin: number;
   /** Appliance ID */
   applianceId: string;
+  /** Optional operating mode requested (e.g. "Convection", "Air Fryer", "Toaster") */
+  applianceMode?: string;
+  /** Whether applianceMode is strictly required or preferred (default 'preferred') */
+  modePreference?: 'required' | 'preferred';
   /** How many slots/racks/burners this step occupies */
   slotsRequired: number;
   /** Target temperature in °F (if applicable) */

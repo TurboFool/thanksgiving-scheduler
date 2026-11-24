@@ -73,7 +73,9 @@ export function buildGeminiSkillInstructions(appliances: Appliance[]): string {
   const appSummary = appliances
     .map(
       (a) =>
-        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}", capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
+        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}"${
+          a.supportedModes?.length ? `, supportedModes: [${a.supportedModes.map((m) => `"${m}"`).join(', ')}]` : ''
+        }, capacity: ${a.capacity} ${a.slotLabel}(s), hasTemperature: ${a.hasTemperature}${
           a.hasTemperature ? `, tolerance: ±${a.tempTolerance}°F` : ''
         }`
     )
@@ -217,6 +219,13 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
       dish: String(item.dish || 'General'),
       durationMin,
       applianceId,
+      applianceMode: item.applianceMode ? String(item.applianceMode).trim() : undefined,
+      modePreference:
+        item.modePreference === 'required'
+          ? 'required'
+          : item.applianceMode
+          ? 'preferred'
+          : undefined,
       slotsRequired: Math.max(1, Number(item.slotsRequired) || 1),
       temperature: Number.isFinite(temp) ? temp : undefined,
       dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(String) : [],
@@ -1079,6 +1088,8 @@ export interface ScheduleAdjustmentProposal {
   stepId: string;
   stepTitle: string;
   applianceId?: string;
+  applianceMode?: string;
+  modePreference?: 'required' | 'preferred';
   durationMin?: number;
   slotsRequired?: number;
   temperature?: number;
@@ -1114,7 +1125,9 @@ export async function evaluateAndAdjustScheduleWithGemini(
   const appSummary = appliances
     .map(
       (a) =>
-        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}", capacity: ${a.capacity} ${a.slotLabel}(s)${
+        `- id: "${a.id}", name: "${a.name}", category: "${a.category ?? ''}"${
+          a.supportedModes?.length ? `, supportedModes: [${a.supportedModes.map((m) => `"${m}"`).join(', ')}]` : ''
+        }, capacity: ${a.capacity} ${a.slotLabel}(s)${
           a.hasTemperature ? `, tempTolerance: ±${a.tempTolerance}°F` : ''
         }`
     )
@@ -1131,9 +1144,12 @@ export async function evaluateAndAdjustScheduleWithGemini(
         s.mustFinishByDinner && s.endMin > targetDinnerMin
           ? ` [FINISHES ${s.endMin - targetDinnerMin}m PAST SERVE]`
           : '';
+      const modeTag = s.applianceMode
+        ? `, mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`
+        : '';
       return `- stepId: "${s.id}", dish: "${s.dish}", title: "${s.title}", status: ${s.status}, time: ${formatTimeMin(
         s.startMin
-      )}–${formatTimeMin(s.endMin)} (${s.durationMin}m), location: ${loc}, slots: ${s.slotsRequired}${
+      )}–${formatTimeMin(s.endMin)} (${s.durationMin}m), location: ${loc}${modeTag}, slots: ${s.slotsRequired}${
         s.temperature ? `, temp: ${s.temperature}°F` : ''
       }${s.isDelayed ? ` [DELAYED +${s.delayMin}m]` : ''}${lateTag}${
         s.canPrepEarly ? ` [CAN PREP EARLY]` : ''
@@ -1165,11 +1181,12 @@ ${stepSummary}
 
 Evaluate the current schedule for:
 1. Any UNASSIGNED steps that need an appliance (or "category:<Name>") assigned.
-2. Oven/appliance rack bottlenecks, temperature conflicts, or steps that can be spread across multiple appliances in the same category.
-3. Steps finishing past Target Serve Time, excessive delays, or dishes that could be prepped early / moved to an earlier slot (use pinnedStartMin in minutes from midnight, or null to unpin).
-4. Any specific corrections or preferences the user asks for in the conversation.
+2. Appliance modes & exclusivity: an appliance can only run ONE mode at a time (e.g., Air Fryer vs Toaster on a Toaster Oven, or Convection vs Bake on an Oven). Assign dishes that prefer/require a mode (like Convection) to an appliance supporting that mode, and avoid overlapping conflicting modes on the same appliance.
+3. Oven/appliance rack bottlenecks, temperature conflicts, or steps that can be spread across multiple appliances in the same category.
+4. Steps finishing past Target Serve Time, excessive delays, or dishes that could be prepped early / moved to an earlier slot (use pinnedStartMin in minutes from midnight, or null to unpin).
+5. Any specific corrections or preferences the user asks for in the conversation.
 
-IMPORTANT: If there is a conflict you CANNOT resolve automatically without a user decision (e.g., two dishes require incompatible oven temperatures at the exact same time with no free oven, or total prep/cook exceeds available time), list concise questions in "unresolvedQuestions" so the user can choose.
+IMPORTANT: If there is a conflict you CANNOT resolve automatically without a user decision (e.g., two dishes require incompatible oven temperatures or modes at the exact same time with no free oven, or total prep/cook exceeds available time), list concise questions in "unresolvedQuestions" so the user can choose.
 
 Return ONLY a valid JSON object:
 {
@@ -1179,6 +1196,8 @@ Return ONLY a valid JSON object:
       "stepId": "exact-step-id-from-above",
       "stepTitle": "Step title",
       "applianceId": "optional-new-appliance-id-or-category:Oven",
+      "applianceMode": "optional-mode-name",
+      "modePreference": "preferred",
       "durationMin": 30,
       "slotsRequired": 1,
       "temperature": 350,
@@ -1230,6 +1249,8 @@ function applyScheduleUpdatesToSteps(
     return {
       ...s,
       ...(u.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
+      ...(u.applianceMode !== undefined ? { applianceMode: u.applianceMode || undefined } : {}),
+      ...(u.modePreference !== undefined ? { modePreference: u.modePreference } : {}),
       ...(u.pinnedStartMin !== undefined
         ? { pinnedStartMin: u.pinnedStartMin === null ? undefined : u.pinnedStartMin }
         : {}),

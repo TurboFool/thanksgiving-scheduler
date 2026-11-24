@@ -779,6 +779,20 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                           </div>
                           <div className="task-bar-sub">
                             <span className="mono">{formatDuration(s.endMin - s.startMin)}</span>
+                            {s.applianceMode && (
+                              <span
+                                style={{
+                                  fontWeight: 600,
+                                  color: 'var(--ink-primary)',
+                                  background: 'rgba(0,0,0,0.06)',
+                                  padding: '0 4px',
+                                  borderRadius: 4,
+                                }}
+                                title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}
+                              >
+                                {s.applianceMode}
+                              </span>
+                            )}
                             {s.pinnedStartMin !== undefined && (
                               <span title="Manually pinned start time" style={{ color: 'var(--accent-sage)' }}>
                                 <Pin size={10} />

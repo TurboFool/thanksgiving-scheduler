@@ -5,6 +5,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.11.0] — 2026-11-23
+
+### Added
+- **Appliance Modes & Mutual Exclusivity (`types.ts`, `ApplianceModal.tsx`, `StepModal.tsx`, `scheduler.ts`)**:
+  - Appliances now support an optional comma-separated **Modes** list (`supportedModes`, e.g., `Bake, Convection, Broil` on an Oven, or `Air Fryer, Toaster Oven, Toaster, Bake` on a Toaster Oven).
+  - Steps can specify an optional **Appliance Mode** (`applianceMode`) with **Preferred** vs. **Required** enforcement (`modePreference`): `Preferred` prioritizes mode-matching appliances (like Convection on Bottom Oven) and falls back if needed, while `Required` strictly restricts placement.
+  - **Mode Exclusivity**: `findValidPlacement` prevents conflicting modes (e.g., `Air Fryer` vs. `Toaster`, or `Convection` vs. `Bake`) from overlapping on the same appliance, while allowing matching modes at compatible temperatures to share racks.
+  - Added mode badges on [`GanttTimeline.tsx`](file:///home/antigravity/TurboFool/thanksgiving-scheduler/src/components/GanttTimeline.tsx) and full `supportedModes` / `applianceMode` awareness in [`gemini.ts`](file:///home/antigravity/TurboFool/thanksgiving-scheduler/src/gemini.ts).
+
+---
+
 ## [2.10.0] — 2026-11-23
 
 ### Added

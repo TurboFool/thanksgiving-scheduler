@@ -28,6 +28,10 @@ export const StepModal: React.FC<StepModalProps> = ({
   const [dish, setDish] = useState(step?.dish ?? defaultDish ?? '');
   const [durationMin, setDurationMin] = useState(step?.durationMin ?? 30);
   const [applianceId, setApplianceId] = useState(step?.applianceId ?? '');
+  const [applianceMode, setApplianceMode] = useState(step?.applianceMode ?? '');
+  const [modePreference, setModePreference] = useState<'required' | 'preferred'>(
+    step?.modePreference ?? 'preferred'
+  );
   const [slotsRequired, setSlotsRequired] = useState(step?.slotsRequired ?? 1);
   const [temperature, setTemperature] = useState<string>(
     step?.temperature !== undefined ? String(step.temperature) : ''
@@ -95,6 +99,8 @@ export const StepModal: React.FC<StepModalProps> = ({
       dish: dish.trim() || 'General',
       durationMin: dur,
       applianceId,
+      applianceMode: applianceMode.trim() || undefined,
+      modePreference: applianceMode.trim() ? modePreference : undefined,
       slotsRequired: Math.max(1, Number(slotsRequired) || 1),
       temperature: Number.isFinite(parsedTemp) ? parsedTemp : undefined,
       dependencies,
@@ -208,6 +214,41 @@ export const StepModal: React.FC<StepModalProps> = ({
                   value={slotsRequired}
                   onChange={(e) => setSlotsRequired(Number(e.target.value))}
                 />
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="step-mode">Appliance Mode (optional)</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    id="step-mode"
+                    type="text"
+                    list="step-appliance-modes"
+                    value={applianceMode}
+                    onChange={(e) => setApplianceMode(e.target.value)}
+                    placeholder="e.g., Convection, Air Fryer"
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                  {applianceMode.trim() && (
+                    <select
+                      aria-label="Mode enforcement"
+                      value={modePreference}
+                      onChange={(e) =>
+                        setModePreference(e.target.value as 'required' | 'preferred')
+                      }
+                      style={{ width: 'auto', minWidth: 105 }}
+                    >
+                      <option value="preferred">Preferred</option>
+                      <option value="required">Required</option>
+                    </select>
+                  )}
+                </div>
+                <datalist id="step-appliance-modes">
+                  {Array.from(
+                    new Set(appliances.flatMap((a) => a.supportedModes ?? []))
+                  ).map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
               </div>
 
               {(selectedApp?.hasTemperature || categoryHasTemp || applianceId === '') && (

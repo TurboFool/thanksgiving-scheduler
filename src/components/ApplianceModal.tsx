@@ -165,7 +165,7 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
                   <Trash2 size={15} />
                 </button>
 
-                <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <label className="dep-check-item">
                     <input
                       type="checkbox"
@@ -195,6 +195,29 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
                       />
                     </div>
                   )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 210, fontSize: '0.8rem' }}>
+                    <span style={{ whiteSpace: 'nowrap', color: 'var(--ink-secondary)' }}>Modes:</span>
+                    <input
+                      type="text"
+                      value={(app.supportedModes ?? []).join(', ')}
+                      onChange={(e) => {
+                        const modes = e.target.value
+                          .split(',')
+                          .map((m) => m.trim())
+                          .filter(Boolean);
+                        updateItem(idx, { supportedModes: modes.length > 0 ? modes : undefined });
+                      }}
+                      placeholder="e.g., Bake, Convection, Air Fryer"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        border: '1px solid var(--border-strong)',
+                        fontSize: '0.78rem',
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             ))}
