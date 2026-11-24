@@ -191,25 +191,79 @@ export const ApplianceModal: React.FC<ApplianceModalProps> = ({ appliances, onSa
                     Shared Temperature Constraint
                   </label>
                   {app.hasTemperature && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
-                      <span>Tolerance (±°F):</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={5}
-                        value={app.tempTolerance}
-                        onChange={(e) =>
-                          updateItem(idx, { tempTolerance: Math.max(0, Number(e.target.value)) })
-                        }
-                        style={{
-                          width: 64,
-                          padding: '4px 6px',
-                          borderRadius: 6,
-                          border: '1px solid var(--border-strong)',
-                        }}
-                      />
-                    </div>
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
+                        <span>Tolerance (±°F):</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={app.tempTolerance}
+                          onChange={(e) =>
+                            updateItem(idx, { tempTolerance: Math.max(0, Number(e.target.value)) })
+                          }
+                          style={{
+                            width: 60,
+                            padding: '4px 6px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-strong)',
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}
+                        title="Optional fixed preheat minutes when temperature increases beyond tolerance (blank = auto 5m per 50°F, 5–20m)"
+                      >
+                        <span style={{ color: 'var(--ink-secondary)' }}>Preheat (m):</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={60}
+                          step={5}
+                          value={app.preheatBufferMin ?? ''}
+                          placeholder="Auto"
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            updateItem(idx, {
+                              preheatBufferMin: raw === '' ? undefined : Math.max(0, Number(raw)),
+                            });
+                          }}
+                          style={{
+                            width: 58,
+                            padding: '4px 6px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-strong)',
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}
+                        title="Optional fixed cooldown minutes when temperature decreases beyond tolerance (blank = auto 5m per 25°F, 5–30m)"
+                      >
+                        <span style={{ color: 'var(--ink-secondary)' }}>Cooldown (m):</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={90}
+                          step={5}
+                          value={app.cooldownBufferMin ?? ''}
+                          placeholder="Auto"
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            updateItem(idx, {
+                              cooldownBufferMin: raw === '' ? undefined : Math.max(0, Number(raw)),
+                            });
+                          }}
+                          style={{
+                            width: 58,
+                            padding: '4px 6px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-strong)',
+                          }}
+                        />
+                      </div>
+                    </>
                   )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 210, fontSize: '0.8rem' }}>
                     <span style={{ whiteSpace: 'nowrap', color: 'var(--ink-secondary)' }}>Modes:</span>

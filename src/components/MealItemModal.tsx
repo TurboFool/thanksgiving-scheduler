@@ -1090,9 +1090,19 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                             <span>
                               ·{' '}
                               {s.applianceId
-                                ? appMap.get(s.applianceId)?.name ?? s.applianceId
+                                ? s.applianceId.startsWith('category:')
+                                  ? `Any ${s.applianceId.slice('category:'.length)}`
+                                  : appMap.get(s.applianceId)?.name ?? s.applianceId
                                 : 'Unassigned (choose per event)'}
                             </span>
+                            {s.applianceMode && (
+                              <span
+                                className="pill mode"
+                                title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}
+                              >
+                                {s.applianceMode}
+                              </span>
+                            )}
                             {s.temperature !== undefined && (
                               <span className="pill temp">{s.temperature}°F</span>
                             )}

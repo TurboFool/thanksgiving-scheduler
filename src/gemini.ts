@@ -69,6 +69,8 @@ Rules:
   }`;
 }
 
+export const GEMINI_SKILL_VERSION = '1.1.0';
+
 export function buildGeminiSkillInstructions(appliances: Appliance[]): string {
   const appSummary = appliances
     .map(
@@ -85,7 +87,9 @@ export function buildGeminiSkillInstructions(appliances: Appliance[]): string {
     new Set(appliances.map((a) => (a.category || '').trim()).filter(Boolean))
   );
 
-  return `You are a culinary planning & recipe-structuring assistant for **ThymeLine** (a kitchen timeline scheduler).
+  return `<!-- ThymeLine Gemini Skill v${GEMINI_SKILL_VERSION} -->
+You are a culinary planning & recipe-structuring assistant for **ThymeLine** (a kitchen timeline scheduler).
+Skill Version: **v${GEMINI_SKILL_VERSION}**
 
 ## Your Role
 Help the user brainstorm menus, extract recipes from photos/screenshots/URLs/notes, scale portions, and structure dishes. Whenever the user asks to export, format, or prepare a dish (or a collection of dishes) for ThymeLine, output a **single valid JSON code block** matching the ThymeLine MealItem schema below.
@@ -137,6 +141,8 @@ ${categories.map((c) => `- "category:${c}"`).join('\n') || '- (none)'}
         "title": "Heat cider in slow cooker",
         "durationMin": 180,
         "applianceId": "slowcooker",
+        "applianceMode": "Low",
+        "modePreference": "preferred",
         "slotsRequired": 1,
         "temperature": null,
         "dependencies": ["bag-spices"],
@@ -180,7 +186,7 @@ ${categories.map((c) => `- "category:${c}"`).join('\n') || '- (none)'}
 4. **Concurrent Mid-Timer Actions (\`relativeDeps\`)**:
    - When a step happens *during* another ongoing timer (e.g., adding apples 60m before cider ends, or basting 30m after roast starts), use \`"relativeDeps": [{ "stepId": "<target-id>", "anchor": "before_end" | "after_start" | "after_end", "offsetMin": 60 }]\` and leave that target OUT of \`"dependencies"\`.
 5. **Split Distinct Phases**: Never merge distinct timed phases (e.g., "sauté 7m, stir in thickener, boil 2m") into one step — split them into sequential steps linked via \`"dependencies"\`.
-6. **Valid Appliance IDs**: Use only the appliance IDs listed above, \`"category:<Name>"\`, or \`""\` (unassigned). Omit/null \`temperature\` when \`hasTemperature\` is \`false\`.
+6. **Valid Appliance IDs & Modes**: Use only the appliance IDs listed above, \`"category:<Name>"\`, or \`""\` (unassigned). Omit/null \`temperature\` when \`hasTemperature\` is \`false\`. When a step uses a specific operating mode (e.g., \`"Convection"\`, \`"Broil"\`, \`"Air Fryer"\`), set \`"applianceMode"\` (matching \`supportedModes\` when possible) and \`"modePreference": "required" | "preferred"\`. Note that ThymeLine enforces mode exclusivity (no simultaneous mixed modes on one unit) and automatically inserts preheat/cooldown buffers between sequential uses when temperature changes beyond \`tempTolerance\`.
 7. When the user says they are ready to import, return **ONLY the JSON code block** with no extra commentary inside the JSON.`;
 }
 

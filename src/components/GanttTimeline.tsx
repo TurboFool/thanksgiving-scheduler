@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Flame, ZoomIn, ZoomOut, Clock, Play, GripVertical, Pin, Snowflake } from 'lucide-react';
 import type { Appliance, ScheduledStep } from '../types';
-import { formatDuration, formatTimeMin } from '../scheduler';
+import { formatApplianceWithMode, formatDuration, formatTimeMin } from '../scheduler';
 
 interface GanttTimelineProps {
   appliances: Appliance[];
@@ -645,102 +645,144 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                       const isNarrow = rect.w < 110;
                       const calloutLeft = displayX + rect.w > trackWidth - 180;
 
+                      const trans = s.transitionBefore;
+                      const prevTransStep = trans
+                        ? appSteps.find((p) => p.id === trans.fromStepId)
+                        : undefined;
+                      const transVisMin = trans
+                        ? prevTransStep
+                          ? Math.max(0, Math.min(trans.durationMin, s.startMin - prevTransStep.endMin))
+                          : trans.durationMin
+                        : 0;
+                      const transW = transVisMin > 0 ? Math.max(8, transVisMin * pxPerMin) : 0;
+
                       return (
-                        <div
-                          key={s.id}
-                          className={`gantt-task ${statusClass} ${isSelected ? 'selected' : ''} ${
-                            isNarrow ? 'is-narrow' : ''
-                          }`}
-                          style={{
-                            left: displayX,
-                            top: rect.y - meta.top,
-                            width: rect.w,
-                            height: rect.h,
-                            borderLeftWidth: 4,
-                            borderLeftColor: app.color,
-                            opacity: isDimmed ? 0.32 : isDraggingThis ? 0.88 : undefined,
-                            cursor: canDrag ? (isDraggingThis ? 'grabbing' : 'grab') : 'pointer',
-                            zIndex: isDraggingThis ? 25 : undefined,
-                          }}
-                          onPointerDown={(e) => {
-                            if (!canDrag || e.button !== 0) return;
-                            if ((e.target as HTMLElement).closest('button')) return;
-                            dragOriginRef.current = {
-                              id: s.id,
-                              startX: e.clientX,
-                              origStartMin: s.startMin,
-                              moved: false,
-                            };
-                          }}
-                          onClick={() => {
-                            if (suppressClickRef.current) return;
-                            onSelectStep(s);
-                          }}
-                          title={`${s.title} (${formatTimeMin(s.startMin)} – ${formatTimeMin(s.endMin)})${
-                            s.canPrepEarly && s.preservationNotes
-                              ? `\nEarly Prep: ${s.preservationNotes}`
-                              : ''
-                          }`}
-                        >
-                          {isNarrow && !isDraggingThis && (() => {
-                            const barTopInLane = rect.y - meta.top;
-                            const isStaggered = rect.calloutPlane > 0;
-                            const relTop = isStaggered ? rect.calloutTopInLane - barTopInLane : 0;
-                            return (
-                              <>
-                                {isStaggered && (
+                        <React.Fragment key={s.id}>
+                          {trans && transW > 0 && !isDraggingThis && (
+                            <div
+                              className={`gantt-transition-band ${trans.type}`}
+                              style={{
+                                left: displayX - transW,
+                                top: rect.y - meta.top,
+                                width: transW,
+                                height: rect.h,
+                              }}
+                              title={`${
+                                trans.type === 'preheat' ? 'Preheat' : 'Cool down'
+                              } ${trans.durationMin}m (${trans.fromTemp}°F → ${trans.toTemp}°F)`}
+                            >
+                              {transW >= 58
+                                ? `${trans.type === 'preheat' ? 'Preheat' : 'Cool'} +${trans.durationMin}m`
+                                : transW >= 24
+                                ? `+${trans.durationMin}m`
+                                : ''}
+                            </div>
+                          )}
+                          <div
+                            className={`gantt-task ${statusClass} ${isSelected ? 'selected' : ''} ${
+                              isNarrow ? 'is-narrow' : ''
+                            }`}
+                            style={{
+                              left: displayX,
+                              top: rect.y - meta.top,
+                              width: rect.w,
+                              height: rect.h,
+                              borderLeftWidth: 4,
+                              borderLeftColor: app.color,
+                              opacity: isDimmed ? 0.32 : isDraggingThis ? 0.88 : undefined,
+                              cursor: canDrag ? (isDraggingThis ? 'grabbing' : 'grab') : 'pointer',
+                              zIndex: isDraggingThis ? 25 : undefined,
+                            }}
+                            onPointerDown={(e) => {
+                              if (!canDrag || e.button !== 0) return;
+                              if ((e.target as HTMLElement).closest('button')) return;
+                              dragOriginRef.current = {
+                                id: s.id,
+                                startX: e.clientX,
+                                origStartMin: s.startMin,
+                                moved: false,
+                              };
+                            }}
+                            onClick={() => {
+                              if (suppressClickRef.current) return;
+                              onSelectStep(s);
+                            }}
+                            title={`${s.title} (${formatTimeMin(s.startMin)} – ${formatTimeMin(s.endMin)})\n${formatApplianceWithMode(app.name, s.applianceMode)}${
+                              s.temperature !== undefined ? ` @ ${s.temperature}°F` : ''
+                            }${
+                              trans
+                                ? `\n${trans.type === 'preheat' ? 'Preheat' : 'Cool down'}: ${trans.durationMin}m (${trans.fromTemp}°F → ${trans.toTemp}°F)`
+                                : ''
+                            }${
+                              s.canPrepEarly && s.preservationNotes
+                                ? `\nEarly Prep: ${s.preservationNotes}`
+                                : ''
+                            }`}
+                          >
+                            {isNarrow && !isDraggingThis && (() => {
+                              const barTopInLane = rect.y - meta.top;
+                              const isStaggered = rect.calloutPlane > 0;
+                              const relTop = isStaggered ? rect.calloutTopInLane - barTopInLane : 0;
+                              return (
+                                <>
+                                  {isStaggered && (
+                                    <div
+                                      style={{
+                                        position: 'absolute',
+                                        top: rect.h,
+                                        left: calloutLeft ? undefined : Math.min(10, rect.w / 2),
+                                        right: calloutLeft ? Math.min(10, rect.w / 2) : undefined,
+                                        width: 1.5,
+                                        height: Math.max(4, relTop - rect.h + 4),
+                                        background: app.color,
+                                        opacity: 0.65,
+                                        pointerEvents: 'none',
+                                      }}
+                                    />
+                                  )}
                                   <div
+                                    className={`gantt-task-callout ${
+                                      isStaggered
+                                        ? ''
+                                        : calloutLeft
+                                        ? 'align-left'
+                                        : 'align-right'
+                                    }`}
                                     style={{
-                                      position: 'absolute',
-                                      top: rect.h,
-                                      left: calloutLeft ? undefined : Math.min(10, rect.w / 2),
-                                      right: calloutLeft ? Math.min(10, rect.w / 2) : undefined,
-                                      width: 1.5,
-                                      height: Math.max(4, relTop - rect.h + 4),
-                                      background: app.color,
-                                      opacity: 0.65,
-                                      pointerEvents: 'none',
-                                    }}
-                                  />
-                                )}
-                                <div
-                                  className={`gantt-task-callout ${
-                                    isStaggered
-                                      ? ''
-                                      : calloutLeft
-                                      ? 'align-left'
-                                      : 'align-right'
-                                  }`}
-                                  style={{
-                                    borderLeft: `3px solid ${app.color}`,
-                                    ...(isStaggered
-                                      ? {
-                                          top: relTop,
-                                          transform: 'none',
-                                          left: calloutLeft ? undefined : 0,
-                                          right: calloutLeft ? 0 : undefined,
-                                        }
-                                      : {}),
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
+                                      borderLeft: `3px solid ${app.color}`,
+                                      ...(isStaggered
+                                        ? {
+                                            top: relTop,
+                                            transform: 'none',
+                                            left: calloutLeft ? undefined : 0,
+                                            right: calloutLeft ? 0 : undefined,
+                                          }
+                                        : {}),
                                     }}
                                   >
-                                    {s.title}
-                                  </span>
-                                  <span
-                                    className="mono"
-                                    style={{ fontSize: '0.66rem', color: 'var(--ink-muted)', flexShrink: 0 }}
-                                  >
-                                    {formatDuration(s.endMin - s.startMin)}
-                                  </span>
-                                </div>
-                              </>
-                            );
-                          })()}
+                                    <span
+                                      style={{
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                      }}
+                                    >
+                                      {s.title}
+                                    </span>
+                                    {s.applianceMode && (
+                                      <span className="pill mode" style={{ fontSize: '0.62rem', padding: '0 4px', flexShrink: 0 }}>
+                                        {s.applianceMode}
+                                      </span>
+                                    )}
+                                    <span
+                                      className="mono"
+                                      style={{ fontSize: '0.66rem', color: 'var(--ink-muted)', flexShrink: 0 }}
+                                    >
+                                      {formatDuration(s.endMin - s.startMin)}
+                                    </span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           {isDraggingThis && (
                             <div
                               style={{
@@ -781,13 +823,8 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                             <span className="mono">{formatDuration(s.endMin - s.startMin)}</span>
                             {s.applianceMode && (
                               <span
-                                style={{
-                                  fontWeight: 600,
-                                  color: 'var(--ink-primary)',
-                                  background: 'rgba(0,0,0,0.06)',
-                                  padding: '0 4px',
-                                  borderRadius: 4,
-                                }}
+                                className="pill mode"
+                                style={{ padding: '0 4px', fontSize: '0.64rem' }}
                                 title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}
                               >
                                 {s.applianceMode}
@@ -828,6 +865,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                             )}
                           </div>
                         </div>
+                        </React.Fragment>
                       );
                     })}
                   </div>

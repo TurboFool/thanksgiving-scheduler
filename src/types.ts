@@ -15,6 +15,10 @@ export interface Appliance {
   hasTemperature: boolean;
   /** Max °F difference allowed between simultaneous items */
   tempTolerance: number;
+  /** Optional fixed preheat buffer (min) when temp increases > tolerance (default: dynamic 5m/50°F, 5–20m) */
+  preheatBufferMin?: number;
+  /** Optional fixed cooldown buffer (min) when temp decreases > tolerance (default: dynamic 5m/25°F, 5–30m) */
+  cooldownBufferMin?: number;
   /** Accent hex color for timeline lane */
   color: string;
 }
@@ -158,6 +162,14 @@ export interface ThymeLineWorkspace {
   defaultAppliances: Appliance[];
 }
 
+export interface TempTransition {
+  type: 'preheat' | 'cooldown';
+  durationMin: number;
+  fromTemp: number;
+  toTemp: number;
+  fromStepId: string;
+}
+
 export interface ScheduledStep extends MealStep {
   /** Concrete appliance ID selected by scheduler (resolves category:* targets, or '' if unassigned) */
   resolvedApplianceId: string;
@@ -179,6 +191,8 @@ export interface ScheduledStep extends MealStep {
   isDelayed: boolean;
   /** Minutes delayed relative to ideal plan */
   delayMin: number;
+  /** Required preheat or cooldown transition immediately before this step on the same appliance */
+  transitionBefore?: TempTransition;
 }
 
 export interface ScheduleResult {

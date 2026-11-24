@@ -1,4 +1,4 @@
-import type { Appliance, MealStep, ScheduledStep, ScheduleResult } from './types';
+import type { Appliance, MealStep, ScheduledStep, ScheduleResult, TempTransition } from './types';
 
 interface Interval {
   stepId: string;
@@ -8,6 +8,33 @@ interface Interval {
   temp?: number;
   mode?: string;
   row: number;
+}
+
+export function getRequiredTempTransition(
+  fromTemp: number | undefined,
+  toTemp: number | undefined,
+  appliance: Appliance
+): { type: 'preheat' | 'cooldown'; durationMin: number } | null {
+  if (!appliance.hasTemperature || fromTemp === undefined || toTemp === undefined) {
+    return null;
+  }
+  const diff = toTemp - fromTemp;
+  if (Math.abs(diff) <= appliance.tempTolerance) {
+    return null;
+  }
+  if (diff > 0) {
+    const durationMin =
+      appliance.preheatBufferMin !== undefined && appliance.preheatBufferMin >= 0
+        ? appliance.preheatBufferMin
+        : Math.min(20, Math.max(5, Math.ceil(diff / 50) * 5));
+    return durationMin > 0 ? { type: 'preheat', durationMin } : null;
+  }
+  const absDiff = Math.abs(diff);
+  const durationMin =
+    appliance.cooldownBufferMin !== undefined && appliance.cooldownBufferMin >= 0
+      ? appliance.cooldownBufferMin
+      : Math.min(30, Math.max(5, Math.ceil(absDiff / 25) * 5));
+  return durationMin > 0 ? { type: 'cooldown', durationMin } : null;
 }
 
 /**
@@ -27,6 +54,24 @@ function findValidPlacement(
   if (slots > appliance.capacity) {
     // Even if misconfigured, allow at row 0 so scheduler never infinite-loops
     return { valid: existing.every((iv) => iv.end <= start || iv.start >= end), row: 0 };
+  }
+
+  // Enforce preheat/cooldown transition gaps between sequential uses when temperature changes > tolerance
+  if (appliance.hasTemperature && temp !== undefined) {
+    for (const iv of existing) {
+      if (iv.temp === undefined) continue;
+      if (iv.end <= start) {
+        const trans = getRequiredTempTransition(iv.temp, temp, appliance);
+        if (trans && start - iv.end < trans.durationMin) {
+          return { valid: false, row: 0 };
+        }
+      } else if (iv.start >= end) {
+        const trans = getRequiredTempTransition(temp, iv.temp, appliance);
+        if (trans && iv.start - end < trans.durationMin) {
+          return { valid: false, row: 0 };
+        }
+      }
+    }
   }
 
   // Collect overlapping intervals
@@ -330,7 +375,13 @@ export function computeSchedule(
 
       const candidates = new Set<number>([latestEnd]);
       for (const iv of appIntervals) {
-        if (iv.start <= latestEnd) candidates.add(iv.start);
+        if (iv.start <= latestEnd) {
+          candidates.add(iv.start);
+          const trans = getRequiredTempTransition(step.temperature, iv.temp, app);
+          if (trans && iv.start - trans.durationMin <= latestEnd) {
+            candidates.add(iv.start - trans.durationMin);
+          }
+        }
       }
       const sortedCandidates = Array.from(candidates).sort((a, b) => b - a);
 
@@ -583,7 +634,13 @@ export function computeSchedule(
 
       const candidates = new Set<number>([earliest]);
       for (const iv of appIntervals) {
-        if (iv.end >= earliest) candidates.add(iv.end);
+        if (iv.end >= earliest) {
+          candidates.add(iv.end);
+          const trans = getRequiredTempTransition(iv.temp, step.temperature, app);
+          if (trans && iv.end + trans.durationMin >= earliest) {
+            candidates.add(iv.end + trans.durationMin);
+          }
+        }
       }
       const sortedCandidates = Array.from(candidates).sort((a, b) => a - b);
 
@@ -673,9 +730,41 @@ export function computeSchedule(
       (endMin >= projectedDinnerMin ||
         Array.from(dependents.get(s.id) ?? []).some((dId) => (liveStart.get(dId) ?? 0) === endMin));
 
+    const resolvedAppId = liveApp.get(s.id) ?? '';
+    const resolvedApp = resolvedAppId ? applianceMap.get(resolvedAppId) : undefined;
+    let transitionBefore: TempTransition | undefined;
+    if (resolvedApp && resolvedApp.hasTemperature && s.temperature !== undefined) {
+      let latestPrevEnd = -Infinity;
+      let prevTemp: number | undefined;
+      let prevStepId: string | undefined;
+      for (const other of rawSteps) {
+        if (other.id === s.id) continue;
+        if ((liveApp.get(other.id) ?? '') !== resolvedAppId) continue;
+        if (other.temperature === undefined) continue;
+        const otherEnd = liveEnd.get(other.id)!;
+        if (otherEnd <= startMin && otherEnd > latestPrevEnd) {
+          latestPrevEnd = otherEnd;
+          prevTemp = other.temperature;
+          prevStepId = other.id;
+        }
+      }
+      if (prevTemp !== undefined && prevStepId) {
+        const trans = getRequiredTempTransition(prevTemp, s.temperature, resolvedApp);
+        if (trans) {
+          transitionBefore = {
+            type: trans.type,
+            durationMin: trans.durationMin,
+            fromTemp: prevTemp,
+            toTemp: s.temperature,
+            fromStepId: prevStepId,
+          };
+        }
+      }
+    }
+
     return {
       ...s,
-      resolvedApplianceId: liveApp.get(s.id) ?? '',
+      resolvedApplianceId: resolvedAppId,
       startMin,
       endMin,
       laneRow: liveRow.get(s.id) ?? 0,
@@ -685,6 +774,7 @@ export function computeSchedule(
       effectiveDependents: Array.from(allDependents.get(s.id) ?? []),
       isDelayed: delayMin > 0,
       delayMin,
+      transitionBefore,
     };
   });
 
@@ -697,6 +787,11 @@ export function computeSchedule(
     suggestedStartMin,
     cycleError: null,
   };
+}
+
+export function formatApplianceWithMode(appName: string, mode?: string): string {
+  const trimmedMode = mode?.trim();
+  return trimmedMode ? `${appName} · ${trimmedMode}` : appName;
 }
 
 export function formatTimeMin(totalMin: number): string {

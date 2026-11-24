@@ -15,6 +15,7 @@ import {
   buildGeminiChatPrompt,
   buildGeminiSkillInstructions,
   evaluateAndVerifyScheduleWithGemini,
+  GEMINI_SKILL_VERSION,
   generateScheduleWithGemini,
   parseImportedMeals,
   type ScheduleAdjustmentProposal,
@@ -516,8 +517,13 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 220 }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
-                      Gemini Skill / Gem Instructions
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
+                        Gemini Skill / Gem Instructions
+                      </span>
+                      <span className="pill mode mono" style={{ fontSize: '0.68rem' }}>
+                        v{GEMINI_SKILL_VERSION}
+                      </span>
                     </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--ink-secondary)', marginTop: 2 }}>
                       Copy these instructions to create a reusable Gemini Gem/Skill with your exact

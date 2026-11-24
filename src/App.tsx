@@ -1933,12 +1933,20 @@ export function App() {
                         <span>· {formatDuration(s.durationMin + (s.addedMin || 0))}</span>
                         <span>· {app?.name ?? (s.applianceId.startsWith('category:') ? `Any ${s.applianceId.slice(9)}` : 'Needs Location')}</span>
                         {s.applianceMode && (
-                          <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
+                          <span className="pill mode" title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}>
                             {s.applianceMode}
                           </span>
                         )}
                         {s.temperature !== undefined && (
                           <span className="pill temp">{s.temperature}°F</span>
+                        )}
+                        {s.transitionBefore && (
+                          <span
+                            className={`pill transition-${s.transitionBefore.type}`}
+                            title={`${s.transitionBefore.type === 'preheat' ? 'Preheat' : 'Cool down'} ${s.transitionBefore.durationMin}m (${s.transitionBefore.fromTemp}°F → ${s.transitionBefore.toTemp}°F)`}
+                          >
+                            {s.transitionBefore.type === 'preheat' ? 'Preheat' : 'Cool'} +{s.transitionBefore.durationMin}m
+                          </span>
                         )}
                         {s.isDelayed && <span className="pill delayed">+{s.delayMin}m</span>}
                       </div>
@@ -1985,6 +1993,11 @@ export function App() {
                               <div className="timer-title" title={s.title}>{s.title}</div>
                               <div className="timer-meta">
                                 <span>{app?.name}</span>
+                                {s.applianceMode && (
+                                  <span className="pill mode" title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}>
+                                    {s.applianceMode}
+                                  </span>
+                                )}
                                 {isUntimed && (
                                   <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
                                     Prep · No Timer
@@ -2196,12 +2209,20 @@ export function App() {
                           <span>· {formatDuration(s.durationMin)}</span>
                           <span>· {app?.name ?? (s.applianceId.startsWith('category:') ? `Any ${s.applianceId.slice(9)}` : 'Needs Location')}</span>
                           {s.applianceMode && (
-                            <span className="pill" style={{ background: 'var(--bg-canvas)' }}>
+                            <span className="pill mode" title={`Mode: ${s.applianceMode} (${s.modePreference ?? 'preferred'})`}>
                               {s.applianceMode}
                             </span>
                           )}
                           {s.temperature !== undefined && (
                             <span className="pill temp">{s.temperature}°F</span>
+                          )}
+                          {s.transitionBefore && (
+                            <span
+                              className={`pill transition-${s.transitionBefore.type}`}
+                              title={`${s.transitionBefore.type === 'preheat' ? 'Preheat' : 'Cool down'} ${s.transitionBefore.durationMin}m (${s.transitionBefore.fromTemp}°F → ${s.transitionBefore.toTemp}°F)`}
+                            >
+                              {s.transitionBefore.type === 'preheat' ? 'Preheat' : 'Cool'} +{s.transitionBefore.durationMin}m
+                            </span>
                           )}
                           {s.requiresTimer === false && (
                             <span className="pill" style={{ background: 'var(--bg-canvas)' }}>

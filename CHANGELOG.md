@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.0] — 2026-11-24
+
+### Added & Improved
+- **Unified Appliance Mode Indicators Across All Views (`App.tsx`, `GanttTimeline.tsx`, `MealItemModal.tsx`, `planFormatter.ts`, `index.css`)**:
+  - Added distinct `.pill.mode` badges and unified `Appliance · Mode` labels across **Active Timers**, **Up Next**, **Dish Steps**, **Meal Item Modal** steps, **Gantt Timeline** bars/narrow callouts/tooltips, and **Print / Export** plans.
+- **Preheat & Cooldown Transition Scheduling (`scheduler.ts`, `ApplianceModal.tsx`, `GanttTimeline.tsx`, `App.tsx`)**:
+  - Automatically enforces preheat (`5m` per `50°F` up, 5–20m) and cooldown (`5m` per `25°F` down, 5–30m) transition buffers between sequential uses of a temperature-controlled appliance when temperature changes beyond `tempTolerance`, with optional per-appliance `Preheat (m)` / `Cooldown (m)` overrides in `ApplianceModal`.
+  - Renders hatched **Preheat / Cool** transition bands on the Gantt timeline and transition pills on step cards.
+- **Gemini Skill Versioning (`gemini.ts`, `GeminiModal.tsx`, `GEMINI.md`, `PROJECT_OVERVIEW.md`)**:
+  - Added `GEMINI_SKILL_VERSION` (`1.1.0`) displayed in `GeminiModal` and embedded in `buildGeminiSkillInstructions()`, updated the skill with `applianceMode` / `modePreference` and preheat/cooldown rules, and documented the mandatory rule to bump the skill version and alert the user when app changes affect it.
+
+---
+
 ## [2.13.1] — 2026-11-24
 
 ### Improved

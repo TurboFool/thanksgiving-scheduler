@@ -88,6 +88,9 @@ thanksgiving-scheduler/
 - **Release Checklist**:
   1. Bump `"version"` in `package.json` before pushing a release commit.
   2. Add a dated entry to `CHANGELOG.md` summarizing changes.
+- **Gemini Skill Versioning (`GEMINI_SKILL_VERSION`)**:
+  - `GEMINI_SKILL_VERSION` in `src/gemini.ts` tracks the version of the copyable Gemini Gem/Skill prompt (`buildGeminiSkillInstructions`) and is displayed in `GeminiModal.tsx` and inside the generated skill header.
+  - **Mandatory Rule**: Whenever changes to the app affect the `MealItem`/`MealStep` JSON import schema, appliance/mode rules, or scheduling behavior that the Gemini Skill should reflect, you MUST update `buildGeminiSkillInstructions()` in `src/gemini.ts`, bump `GEMINI_SKILL_VERSION`, and **explicitly alert the user** in your response that the Gemini Skill was updated (with the new version number) so they can re-copy it into their Gemini Gem.
 
 ---
 

@@ -1,5 +1,5 @@
 import type { Appliance, MealEvent, MealItem, ScheduledStep } from './types';
-import { formatDuration, formatTimeMin } from './scheduler';
+import { formatApplianceWithMode, formatDuration, formatTimeMin } from './scheduler';
 import { scaleIngredients, scaleServingsLabel } from './recipeScaler';
 
 export type PlanViewMode = 'chronological' | 'per_dish' | 'combined';
@@ -13,9 +13,12 @@ export interface PlanFormatOptions {
 
 function getApplianceLabel(step: ScheduledStep, appMap: Map<string, Appliance>): string {
   const resolved = step.resolvedApplianceId || step.applianceId;
-  if (!resolved) return 'Needs Location';
-  if (resolved.startsWith('category:')) return `Any ${resolved.slice('category:'.length)}`;
-  return appMap.get(resolved)?.name ?? resolved;
+  const baseName = !resolved
+    ? 'Needs Location'
+    : resolved.startsWith('category:')
+    ? `Any ${resolved.slice('category:'.length)}`
+    : appMap.get(resolved)?.name ?? resolved;
+  return formatApplianceWithMode(baseName, step.applianceMode);
 }
 
 function formatStepLine(
@@ -30,10 +33,13 @@ function formatStepLine(
   const dur = formatDuration(s.endMin - s.startMin);
   const appLabel = getApplianceLabel(s, appMap);
   const temp = s.temperature !== undefined ? ` @ ${s.temperature}°F` : '';
+  const transTag = s.transitionBefore
+    ? ` [${s.transitionBefore.type === 'preheat' ? 'Preheat' : 'Cool down'} +${s.transitionBefore.durationMin}m]`
+    : '';
   const timerTag = s.requiresTimer === false ? ' [Start Alert]' : '';
   const dishTag = options.mode !== 'per_dish' && s.dish ? ` (${s.dish})` : '';
 
-  lines.push(`${box}${timeRange} (${dur}) — ${s.title}${dishTag} · ${appLabel}${temp}${timerTag}`);
+  lines.push(`${box}${timeRange} (${dur}) — ${s.title}${dishTag} · ${appLabel}${temp}${transTag}${timerTag}`);
 
   if (options.includeRecipesAndNotes) {
     if (s.relativeDeps && s.relativeDeps.length > 0) {
