@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.4] — 2026-11-24
+
+### Improved
+- **Gemini Retry & Friendly Overload Message (`gemini.ts`)**: Added a 1.5s automatic retry pass in `callGeminiWithFallback` when all fallback models (`gemini-4-hydrogen`, `gemini-3.8-flash`, `gemini-3.5-flash-lite`) hit transient `503`/`429`/timeout errors, and replaced the raw last-model `503` error with a human-friendly message explaining that all tried models reported high demand.
+
+---
+
 ## [2.14.3] — 2026-11-24
 
 ### Improved

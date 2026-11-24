@@ -458,56 +458,78 @@ async function callGeminiWithFallback(
   body: Record<string, unknown>
 ): Promise<string> {
   const key = encodeURIComponent(apiKey.trim());
+  const maxAttempts = 2;
   let lastError = 'Gemini API request failed.';
+  let transientFailures = 0;
+  const triedModels = new Set<string>();
 
-  for (const model of GEMINI_MODELS) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    }
 
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      window.clearTimeout(timeoutId);
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        lastError = `Request to ${model} timed out after ${GEMINI_TIMEOUT_MS / 1000}s.`;
+    for (const model of GEMINI_MODELS) {
+      triedModels.add(model);
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        window.clearTimeout(timeoutId);
+        transientFailures += 1;
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          lastError = `Request to ${model} timed out after ${GEMINI_TIMEOUT_MS / 1000}s.`;
+          continue;
+        }
+        const msg = err instanceof Error ? err.message : 'Network error';
+        lastError = `Network error calling ${model}: ${msg}`;
+        continue;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        const candidate = data?.candidates?.[0];
+        const text = candidate?.content?.parts?.[0]?.text;
+        if (!text) {
+          const reason =
+            candidate?.finishReason || data?.promptFeedback?.blockReason || 'UNKNOWN';
+          throw new Error(
+            `Gemini (${model}) returned an empty response (reason: ${reason}). Try simplifying your notes or regenerating fresh.`
+          );
+        }
+        return text;
+      }
+
+      const errText = await res.text();
+      lastError = `Gemini API error (${res.status} on ${model}): ${errText.slice(0, 220)}`;
+
+      // Retry with next model on transient overload (503), rate limit (429), or unavailable model (404)
+      if (res.status === 503 || res.status === 429 || res.status === 404) {
+        if (res.status === 503 || res.status === 429) {
+          transientFailures += 1;
+        }
         continue;
       }
-      const msg = err instanceof Error ? err.message : 'Network error';
-      lastError = `Network error calling ${model}: ${msg}`;
-      continue;
-    } finally {
-      window.clearTimeout(timeoutId);
+      throw new Error(lastError);
     }
+  }
 
-    if (res.ok) {
-      const data = await res.json();
-      const candidate = data?.candidates?.[0];
-      const text = candidate?.content?.parts?.[0]?.text;
-      if (!text) {
-        const reason =
-          candidate?.finishReason || data?.promptFeedback?.blockReason || 'UNKNOWN';
-        throw new Error(
-          `Gemini (${model}) returned an empty response (reason: ${reason}). Try simplifying your notes or regenerating fresh.`
-        );
-      }
-      return text;
-    }
-
-    const errText = await res.text();
-    lastError = `Gemini API error (${res.status} on ${model}): ${errText.slice(0, 220)}`;
-
-    // Retry with next model on transient overload (503), rate limit (429), or unavailable model (404)
-    if (res.status === 503 || res.status === 429 || res.status === 404) {
-      continue;
-    }
-    throw new Error(lastError);
+  if (transientFailures >= GEMINI_MODELS.length) {
+    throw new Error(
+      `Gemini is temporarily busy across all ${triedModels.size} models we tried (${Array.from(
+        triedModels
+      ).join(', ')}) — each reported high demand or a temporary timeout. Please wait a few seconds and try again.`
+    );
   }
 
   throw new Error(lastError);
