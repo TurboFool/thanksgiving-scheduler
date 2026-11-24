@@ -73,8 +73,7 @@ thanksgiving-scheduler/
   - Any modal containing a `<form>` must keep `.modal-header` and `.modal-footer` pinned (`flex-shrink: 0`) while `.modal-body` scrolls (`flex: 1; min-height: 0; overflow-y: auto;`).
 - **Comments & Docs**:
   - Preserve existing docstrings and comments unrelated to your changes.
-  - Update `PROJECT_OVERVIEW.md` if you change core data models, scheduling behavior, or add new modules.
-  - Record user-facing changes in `CHANGELOG.md` under the corresponding SemVer release.
+  - **Mandatory Rule**: Keep project documentation (`PROJECT_OVERVIEW.md`, `CHANGELOG.md`, and `GEMINI.md` when workflows or standards change) up to date **as work is done** whenever data models, scheduling behavior, UI capabilities, or Gemini integrations change.
 
 ---
 

@@ -10,7 +10,7 @@ Cooking a large family or holiday meal involves tightly coupled constraints:
 - **Per-Item Finish Windows**: Dishes can target the main serve time, finish `X` minutes before (cooling/appetizers), use a flexible window (e.g., 30m–4h early for room-temp/reheatable items to free oven space), or run post-dinner.
 - **Appliance Capacity & Temperature Sharing**: Appliances have limited physical space (e.g., 2 oven racks, 4 stovetop burners) and shared chamber temperatures.
 - **Real-Time Schedule Slip & Cascading Timers**: Live countdown timers with audible & spoken voice alerts (**Test Bell** and **Test Voice**) cascade downstream and appliance-bound steps automatically.
-- **Gemini AI Reconciliation**: Per-item and cross-event Gemini (`gemini-4-hydrogen` with automatic fallback) respects logged manual edits (`manualChangeLog`) when reprocessing.
+- **Gemini AI Reconciliation**: Per-item and cross-event Gemini (`gemini-4-hydrogen` → `gemini-3.8-flash` → `gemini-3.5-flash-lite` with 1.5s transient retry) respects logged manual edits (`manualChangeLog`), infers missing operating modes from notes, and explains mode/appliance trade-offs.
 
 ---
 
@@ -29,7 +29,7 @@ Cooking a large family or holiday meal involves tightly coupled constraints:
 All scheduling and cascading math runs **100% locally and deterministically** in `computeSchedule`:
 1. **Unified DAG & Cycle Detection**: Merges `dependencies` and `readyBeforeIds` with Kahn's topological sort.
 2. **Pass 1 — Backward Resource-Constrained Pass**: Anchors each step to its `finishConstraint` (`at_target`, `before_target`, `window`, `after_target`) or manual `pinnedStartMin`, resolves `category:<Name>` targets across matching appliances, populates `resolvedApplianceId`, and places tasks ALAP without exceeding `appliance.capacity`, `tempTolerance`, mode exclusivity, or sequential preheat/cooldown buffers (`5m` per `50°F` up, `5m` per `25°F` down, or per-appliance overrides).
-3. **Pass 2 — Forward Live-Cascade Pass**: Pins `done`, `running`, and `paused` steps, honors `pinnedStartMin` overrides, and schedules `pending` steps at the earliest conflict-free slot, attaching `transitionBefore` metadata for UI rendering.
+3. **Pass 2 — Forward Live-Cascade Pass**: Pins `done`, `running`, and `paused` steps, honors `pinnedStartMin` overrides, and schedules `pending` steps at the earliest conflict-free slot, steering `preferred`-mode steps toward mode-supporting appliances and attaching `transitionBefore`, `effectiveMode`, and `modeDecisionNote` metadata for UI rendering (including Gantt pinch-to-zoom and collapsible Kitchen Mode dish filters).
 4. **Recipe Scaling (`src/recipeScaler.ts`)**: Deterministically scales `1X` ingredient quantities (integers, decimals, fractions, unicode fractions, and ranges) and servings labels.
 
 ---
