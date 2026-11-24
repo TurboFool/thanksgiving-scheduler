@@ -133,6 +133,88 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   const totalMin = Math.max(60, endBound - startBound);
   const availTrackWidth = Math.max(320, viewportWidth - 195);
 
+  const startBoundRef = useRef(startBound);
+  startBoundRef.current = startBound;
+  const pxPerMinRef = useRef(pxPerMin);
+  pxPerMinRef.current = pxPerMin;
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const applyZoomAroundClientX = (nextPxRaw: number, clientX: number) => {
+      const prevPx = pxPerMinRef.current;
+      const nextPx = Math.min(60, Math.max(1.2, Number(nextPxRaw.toFixed(2))));
+      if (nextPx === prevPx) return;
+
+      const rect = el.getBoundingClientRect();
+      const pointerXInView = clientX - rect.left;
+      const trackOffsetX = Math.max(0, pointerXInView - 185);
+      const sb = startBoundRef.current;
+      const timeAtPointer = sb + (el.scrollLeft + trackOffsetX) / prevPx;
+
+      pxPerMinRef.current = nextPx;
+      lastInteractionAtRef.current = Date.now();
+      setAutoZoom(false);
+      setPxPerMin(nextPx);
+
+      window.requestAnimationFrame(() => {
+        el.scrollLeft = Math.max(0, (timeAtPointer - startBoundRef.current) * nextPx - trackOffsetX);
+      });
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      lastInteractionAtRef.current = Date.now();
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = Math.max(0.7, Math.min(1.4, Math.exp(-e.deltaY * 0.01)));
+      applyZoomAroundClientX(pxPerMinRef.current * factor, e.clientX);
+    };
+
+    let lastPinchDist: number | null = null;
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const [t1, t2] = [e.touches[0], e.touches[1]];
+        lastPinchDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      } else {
+        lastPinchDist = null;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && lastPinchDist !== null) {
+        e.preventDefault();
+        const [t1, t2] = [e.touches[0], e.touches[1]];
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        if (lastPinchDist > 0) {
+          const ratio = Math.max(0.7, Math.min(1.4, dist / lastPinchDist));
+          const midX = (t1.clientX + t2.clientX) / 2;
+          applyZoomAroundClientX(pxPerMinRef.current * ratio, midX);
+        }
+        lastPinchDist = dist;
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        lastPinchDist = null;
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, []);
+
   const zoomToWindow = (windowMin: number, focusMin = nowMin) => {
     const nextPx = Math.min(60, Math.max(1.2, availTrackWidth / Math.max(15, windowMin)));
     setPxPerMin(nextPx);

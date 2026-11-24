@@ -754,9 +754,8 @@ textarea {
 }
 
 .gantt-task:hover {
-  transform: translateY(-1px);
   box-shadow: var(--shadow-md);
-  min-width: max-content;
+  border-color: rgba(0, 0, 0, 0.28);
   z-index: 20;
 }
 
@@ -804,12 +803,6 @@ textarea {
   overflow: hidden;
 }
 
-.gantt-task:hover .task-bar-title {
-  display: block;
-  white-space: nowrap;
-  -webkit-line-clamp: unset;
-}
-
 .task-bar-sub {
   font-size: 0.67rem;
   color: var(--ink-secondary);
@@ -828,11 +821,7 @@ textarea {
 .gantt-task.is-narrow .task-bar-title,
 .gantt-task.is-narrow .task-bar-sub {
   opacity: 0;
-}
-
-.gantt-task.is-narrow:hover .task-bar-title,
-.gantt-task.is-narrow:hover .task-bar-sub {
-  opacity: 1;
+  pointer-events: none;
 }
 
 .gantt-task-callout {

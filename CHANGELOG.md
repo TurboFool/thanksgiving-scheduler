@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.5] — 2026-11-24
+
+### Fixed & Added
+- **Gantt Bar Hover Flashing Fix (`index.css`)**: Removed layout-shifting `transform: translateY(-1px)`, `min-width: max-content`, and `.is-narrow:hover` opacity toggles on `.gantt-task:hover` that caused rapid hover/unhover oscillation when the cursor rested near bar edges or callout labels.
+- **Pinch-to-Zoom on Gantt Timeline (`GanttTimeline.tsx`)**: Added trackpad (`ctrl`/`meta` + `wheel`) and touchscreen (two-finger pinch) zoom gestures on the timeline scroll container, zooming smoothly around the pointer/pinch midpoint without triggering browser page zoom.
+
+---
+
 ## [2.14.4] — 2026-11-24
 
 ### Improved
