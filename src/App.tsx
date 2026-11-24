@@ -2238,6 +2238,7 @@ export function App() {
           scheduledSteps={schedule.steps}
           targetDinnerMin={targetDinnerMin}
           projectedDinnerMin={schedule.projectedDinnerMin}
+          nowMin={isAutoSim ? undefined : nowMin}
           apiKey={settings.geminiApiKey}
           onOpenSettings={() => setShowSettingsModal(true)}
           onApplyScheduleUpdates={handleApplyScheduleUpdates}

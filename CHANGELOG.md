@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.10.0] — 2026-11-23
+
+### Added
+- **Closed-Loop Schedule Verification (`evaluateAndVerifyScheduleWithGemini` in `gemini.ts`, `GeminiModal.tsx`)**: When evaluating the schedule, Gemini's proposed updates are now simulated locally using ThymeLine's deterministic `computeSchedule` engine. If the updates leave behind or introduce new delays, late finishes, or unassigned steps, ThymeLine automatically feeds the simulated schedule back to Gemini (up to a 3-pass limit) until resolved.
+- **Unresolved Conflict & Trade-Off Reporting**: Displays a **Simulated Schedule Verification** banner showing the verified finish time after applying updates, plus any remaining issues or `unresolvedQuestions` that require your decision in the follow-up chat.
+
+---
+
 ## [2.9.0] — 2026-11-23
 
 ### Added

@@ -1,5 +1,5 @@
 import type { Appliance, DishCourse, FinishConstraint, MealItem, MealStep, ScheduledStep } from './types';
-import { formatTimeMin } from './scheduler';
+import { computeSchedule, formatTimeMin } from './scheduler';
 import { scaleIngredients } from './recipeScaler';
 import { stepsToMealItems } from './workspace';
 
@@ -1086,9 +1086,20 @@ export interface ScheduleAdjustmentProposal {
   reason: string;
 }
 
+export interface VerifiedScheduleOutcome {
+  passesRun: number;
+  dinnerDeltaMin: number;
+  projectedDinnerMin: number;
+  unassignedCount: number;
+  delayedCount: number;
+  remainingIssues: string[];
+}
+
 export interface ScheduleEvaluationResult {
   reply: string;
   recommendedUpdates: ScheduleAdjustmentProposal[];
+  unresolvedQuestions?: string[];
+  verifiedOutcome?: VerifiedScheduleOutcome;
 }
 
 export async function evaluateAndAdjustScheduleWithGemini(
@@ -1116,11 +1127,15 @@ export async function evaluateAndAdjustScheduleWithGemini(
           ? s.applianceId
           : `${s.applianceId} -> ${s.resolvedApplianceId}`
         : 'UNASSIGNED';
+      const lateTag =
+        s.mustFinishByDinner && s.endMin > targetDinnerMin
+          ? ` [FINISHES ${s.endMin - targetDinnerMin}m PAST SERVE]`
+          : '';
       return `- stepId: "${s.id}", dish: "${s.dish}", title: "${s.title}", status: ${s.status}, time: ${formatTimeMin(
         s.startMin
       )}–${formatTimeMin(s.endMin)} (${s.durationMin}m), location: ${loc}, slots: ${s.slotsRequired}${
         s.temperature ? `, temp: ${s.temperature}°F` : ''
-      }${s.isDelayed ? ` [DELAYED +${s.delayMin}m]` : ''}${
+      }${s.isDelayed ? ` [DELAYED +${s.delayMin}m]` : ''}${lateTag}${
         s.canPrepEarly ? ` [CAN PREP EARLY]` : ''
       }`;
     })
@@ -1151,8 +1166,10 @@ ${stepSummary}
 Evaluate the current schedule for:
 1. Any UNASSIGNED steps that need an appliance (or "category:<Name>") assigned.
 2. Oven/appliance rack bottlenecks, temperature conflicts, or steps that can be spread across multiple appliances in the same category.
-3. Delays or dishes that could be prepped early / moved to an earlier slot.
+3. Steps finishing past Target Serve Time, excessive delays, or dishes that could be prepped early / moved to an earlier slot (use pinnedStartMin in minutes from midnight, or null to unpin).
 4. Any specific corrections or preferences the user asks for in the conversation.
+
+IMPORTANT: If there is a conflict you CANNOT resolve automatically without a user decision (e.g., two dishes require incompatible oven temperatures at the exact same time with no free oven, or total prep/cook exceeds available time), list concise questions in "unresolvedQuestions" so the user can choose.
 
 Return ONLY a valid JSON object:
 {
@@ -1168,7 +1185,8 @@ Return ONLY a valid JSON object:
       "pinnedStartMin": null,
       "reason": "Brief reason for this change"
     }
-  ]
+  ],
+  "unresolvedQuestions": ["Optional question if a trade-off requires user input"]
 }
 Only include fields in each update object that actually need to change.`;
 
@@ -1194,5 +1212,162 @@ Only include fields in each update object that actually need to change.`;
     recommendedUpdates: Array.isArray(parsed.recommendedUpdates)
       ? parsed.recommendedUpdates
       : [],
+    unresolvedQuestions: Array.isArray(parsed.unresolvedQuestions)
+      ? parsed.unresolvedQuestions.map((q) => String(q).trim()).filter(Boolean)
+      : [],
+  };
+}
+
+function applyScheduleUpdatesToSteps(
+  steps: MealStep[],
+  updates: ScheduleAdjustmentProposal[]
+): MealStep[] {
+  if (updates.length === 0) return steps;
+  const updateMap = new Map(updates.map((u) => [u.stepId, u]));
+  return steps.map((s) => {
+    const u = updateMap.get(s.id);
+    if (!u) return s;
+    return {
+      ...s,
+      ...(u.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
+      ...(u.pinnedStartMin !== undefined
+        ? { pinnedStartMin: u.pinnedStartMin === null ? undefined : u.pinnedStartMin }
+        : {}),
+      ...(u.durationMin !== undefined ? { durationMin: Math.max(1, Math.round(u.durationMin)) } : {}),
+      ...(u.slotsRequired !== undefined
+        ? { slotsRequired: Math.max(1, Math.round(u.slotsRequired)) }
+        : {}),
+      ...(u.temperature !== undefined
+        ? { temperature: u.temperature === null ? undefined : u.temperature }
+        : {}),
+    };
+  });
+}
+
+function collectRemainingScheduleIssues(
+  sim: ReturnType<typeof computeSchedule>,
+  targetDinnerMin: number
+): string[] {
+  const issues: string[] = [];
+  if (sim.cycleError) {
+    issues.push(sim.cycleError);
+  }
+  if (sim.dinnerDeltaMin > 0) {
+    issues.push(
+      `Projected finish is ${formatTimeMin(sim.projectedDinnerMin)} (${sim.dinnerDeltaMin}m past target ${formatTimeMin(targetDinnerMin)}).`
+    );
+  }
+  const unassigned = sim.steps.filter((s) => !s.resolvedApplianceId);
+  if (unassigned.length > 0) {
+    issues.push(
+      `${unassigned.length} step(s) still unassigned: ${unassigned.map((s) => s.title).join(', ')}.`
+    );
+  }
+  const lateSteps = sim.steps.filter((s) => s.mustFinishByDinner && s.endMin > targetDinnerMin);
+  if (lateSteps.length > 0 && sim.dinnerDeltaMin <= 0) {
+    issues.push(
+      `${lateSteps.length} step(s) finish past serve time: ${lateSteps.map((s) => s.title).join(', ')}.`
+    );
+  }
+  const delayed = sim.steps.filter((s) => s.delayMin >= 15);
+  if (delayed.length > 0) {
+    issues.push(
+      `${delayed.length} step(s) delayed ≥15m: ${delayed
+        .map((s) => `${s.title} (+${s.delayMin}m)`)
+        .join(', ')}.`
+    );
+  }
+  return issues;
+}
+
+const MAX_VERIFY_PASSES = 3;
+
+/**
+ * Evaluates the schedule with Gemini, then simulates the proposed updates locally
+ * using ThymeLine's deterministic scheduler. If the updates introduce new delays,
+ * late finishes, or conflicts, automatically feeds the simulated result back to
+ * Gemini (up to MAX_VERIFY_PASSES) until resolved or surfaced to the user.
+ */
+export async function evaluateAndVerifyScheduleWithGemini(
+  apiKey: string,
+  conversation: Array<{ role: 'user' | 'model'; text: string }>,
+  items: MealItem[],
+  baseSteps: MealStep[],
+  appliances: Appliance[],
+  targetDinnerMin: number,
+  nowMin?: number,
+  onProgress?: (statusText: string) => void
+): Promise<ScheduleEvaluationResult> {
+  let workingSteps = baseSteps.map((s) => ({ ...s }));
+  const mergedUpdates = new Map<string, ScheduleAdjustmentProposal>();
+  let workingConversation = [...conversation];
+  let latestReply = '';
+  let latestQuestions: string[] = [];
+  let passesRun = 0;
+  let latestSim = computeSchedule(workingSteps, appliances, targetDinnerMin, nowMin);
+
+  for (let pass = 1; pass <= MAX_VERIFY_PASSES; pass++) {
+    passesRun = pass;
+    onProgress?.(
+      pass === 1
+        ? 'Evaluating schedule with Gemini (pass 1/3)...'
+        : `Re-checking simulated schedule (pass ${pass}/${MAX_VERIFY_PASSES})...`
+    );
+
+    const res = await evaluateAndAdjustScheduleWithGemini(
+      apiKey,
+      workingConversation,
+      items,
+      latestSim.steps,
+      appliances,
+      targetDinnerMin,
+      latestSim.projectedDinnerMin
+    );
+
+    latestReply = res.reply;
+    if (res.unresolvedQuestions?.length) {
+      latestQuestions = res.unresolvedQuestions;
+    }
+
+    for (const u of res.recommendedUpdates) {
+      const prev = mergedUpdates.get(u.stepId);
+      mergedUpdates.set(u.stepId, prev ? { ...prev, ...u } : u);
+    }
+
+    workingSteps = applyScheduleUpdatesToSteps(baseSteps, Array.from(mergedUpdates.values()));
+    latestSim = computeSchedule(workingSteps, appliances, targetDinnerMin, nowMin);
+    const remainingIssues = collectRemainingScheduleIssues(latestSim, targetDinnerMin);
+
+    if (remainingIssues.length === 0 || res.recommendedUpdates.length === 0) {
+      break;
+    }
+
+    if (pass < MAX_VERIFY_PASSES) {
+      workingConversation = [
+        ...workingConversation,
+        { role: 'model', text: res.reply },
+        {
+          role: 'user',
+          text: `I simulated your proposed updates in ThymeLine's deterministic scheduler, and these issues STILL remain:\n${remainingIssues
+            .map((i) => `- ${i}`)
+            .join('\n')}\nPlease provide follow-up adjustments to resolve these remaining issues (without breaking earlier fixes), or explain the trade-off in "unresolvedQuestions" if it requires my decision.`,
+        },
+      ];
+    }
+  }
+
+  const finalIssues = collectRemainingScheduleIssues(latestSim, targetDinnerMin);
+  return {
+    reply: latestReply,
+    recommendedUpdates: Array.from(mergedUpdates.values()),
+    unresolvedQuestions: latestQuestions,
+    verifiedOutcome: {
+      passesRun,
+      dinnerDeltaMin: latestSim.dinnerDeltaMin,
+      projectedDinnerMin: latestSim.projectedDinnerMin,
+      unassignedCount: latestSim.steps.filter((s) => !s.resolvedApplianceId).length,
+      delayedCount: latestSim.steps.filter((s) => s.isDelayed).length,
+      remainingIssues: finalIssues,
+    },
   };
 }

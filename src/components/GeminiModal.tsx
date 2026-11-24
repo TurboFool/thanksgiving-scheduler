@@ -14,11 +14,13 @@ import type { Appliance, MealItem, MealStep, ScheduledStep } from '../types';
 import {
   buildGeminiChatPrompt,
   buildGeminiSkillInstructions,
-  evaluateAndAdjustScheduleWithGemini,
+  evaluateAndVerifyScheduleWithGemini,
   generateScheduleWithGemini,
   parseImportedMeals,
   type ScheduleAdjustmentProposal,
+  type VerifiedScheduleOutcome,
 } from '../gemini';
+import { formatTimeMin } from '../scheduler';
 
 interface GeminiModalProps {
   appliances: Appliance[];
@@ -27,6 +29,7 @@ interface GeminiModalProps {
   scheduledSteps: ScheduledStep[];
   targetDinnerMin: number;
   projectedDinnerMin: number;
+  nowMin?: number;
   apiKey: string;
   onOpenSettings: () => void;
   onApplyScheduleUpdates: (updates: ScheduleAdjustmentProposal[]) => void;
@@ -44,6 +47,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   scheduledSteps,
   targetDinnerMin,
   projectedDinnerMin,
+  nowMin,
   apiKey,
   onOpenSettings,
   onApplyScheduleUpdates,
@@ -58,12 +62,15 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   const [copiedSkill, setCopiedSkill] = useState(false);
   const [copiedExport, setCopiedExport] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Interactive Schedule Evaluator state
   const [chatTurns, setChatTurns] = useState<Array<{ role: 'user' | 'model'; text: string }>>([]);
   const [followUpInput, setFollowUpInput] = useState('');
   const [proposedUpdates, setProposedUpdates] = useState<ScheduleAdjustmentProposal[]>([]);
+  const [unresolvedQuestions, setUnresolvedQuestions] = useState<string[]>([]);
+  const [verifiedOutcome, setVerifiedOutcome] = useState<VerifiedScheduleOutcome | null>(null);
   const [appliedUpdates, setAppliedUpdates] = useState(false);
 
   const effectiveMode = steps.length === 0 ? 'replace' : mode;
@@ -151,6 +158,8 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   const runEvaluation = async (userMessage?: string) => {
     setError(null);
     setAppliedUpdates(false);
+    setVerifiedOutcome(null);
+    setUnresolvedQuestions([]);
     if (!apiKey.trim()) {
       setError('Please configure your Gemini API key in Settings first.');
       return;
@@ -166,22 +175,27 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
     setChatTurns(nextHistory);
     setFollowUpInput('');
     setLoading(true);
+    setVerifyStatus('Evaluating schedule with Gemini (pass 1/3)...');
     try {
-      const res = await evaluateAndAdjustScheduleWithGemini(
+      const res = await evaluateAndVerifyScheduleWithGemini(
         apiKey,
         nextHistory,
         mealItems,
-        scheduledSteps,
+        steps,
         appliances,
         targetDinnerMin,
-        projectedDinnerMin
+        nowMin,
+        (msg) => setVerifyStatus(msg)
       );
       setChatTurns((prev) => [...prev, { role: 'model', text: res.reply }]);
       setProposedUpdates(res.recommendedUpdates);
+      setUnresolvedQuestions(res.unresolvedQuestions ?? []);
+      setVerifiedOutcome(res.verifiedOutcome ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to evaluate schedule.');
     } finally {
       setLoading(false);
+      setVerifyStatus(null);
     }
   };
 
@@ -326,11 +340,16 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                 >
                   <Sparkles size={14} />
                   {loading
-                    ? 'Evaluating...'
+                    ? verifyStatus || 'Evaluating...'
                     : chatTurns.length > 0
                     ? 'Re-Evaluate Schedule'
                     : 'Evaluate Current Schedule'}
                 </button>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
+                Current Projected Finish:{' '}
+                <strong className="mono">{formatTimeMin(projectedDinnerMin)}</strong> (Target:{' '}
+                <strong className="mono">{formatTimeMin(targetDinnerMin)}</strong>)
               </div>
 
               {chatTurns.length > 0 && (
@@ -354,6 +373,50 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                       <div style={{ marginTop: 2 }}>{turn.text}</div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {verifiedOutcome && (
+                <div
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background:
+                      verifiedOutcome.remainingIssues.length === 0
+                        ? 'var(--status-sage-soft)'
+                        : 'var(--status-amber-soft)',
+                    border:
+                      verifiedOutcome.remainingIssues.length === 0
+                        ? '1px solid var(--accent-sage)'
+                        : '1px solid var(--status-amber)',
+                    fontSize: '0.78rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    {verifiedOutcome.remainingIssues.length === 0
+                      ? `Verified in ${verifiedOutcome.passesRun} pass${
+                          verifiedOutcome.passesRun === 1 ? '' : 'es'
+                        } · Simulated Finish: ${formatTimeMin(
+                          verifiedOutcome.projectedDinnerMin
+                        )} (On Time)`
+                      : `Simulated after ${verifiedOutcome.passesRun} pass${
+                          verifiedOutcome.passesRun === 1 ? '' : 'es'
+                        } — ${verifiedOutcome.remainingIssues.length} issue(s) need your input:`}
+                  </div>
+                  {verifiedOutcome.remainingIssues.map((issue, idx) => (
+                    <div key={idx}>• {issue}</div>
+                  ))}
+                  {unresolvedQuestions.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      <strong>Questions for you:</strong>
+                      {unresolvedQuestions.map((q, idx) => (
+                        <div key={idx}>• {q}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
