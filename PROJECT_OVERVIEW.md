@@ -50,3 +50,13 @@ All scheduling and cascading math runs **100% locally and deterministically** in
 - `npm run dev` — start local Vite dev server
 - `npm run build` — run `tsc -b && vite build`
 - `npm run lint` — run `oxlint`
+
+---
+
+## 6. Roadmap (Future Enhancements — Do Not Implement Until Explicitly Requested)
+
+- **Better Event Management & Event Interface**:
+  - Improved view/browser for the list of events.
+  - Event-specific notes (add/edit/track notes per event, and pass them to Gemini during schedule evaluations).
+  - Ability to delete events.
+  - Ability to copy/duplicate events with an immediate prompt to rename the copy, choose whether to copy notes and other relevant fields, and optionally edit those fields before saving.
