@@ -167,7 +167,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
     }
     const promptMsg =
       userMessage?.trim() ||
-      'Evaluate my current event schedule for unassigned steps, appliance/oven conflicts, temperature clashes, and timing delays, and propose updates.';
+      'Evaluate my current event schedule for unassigned steps, optimal appliance and operating mode choices (such as Convection vs. Bake), appliance/oven conflicts, temperature clashes (including preheat/cooldown gaps), and timing delays. Propose updates and explain how and why any mode or appliance trade-offs were decided.';
 
     const nextHistory: Array<{ role: 'user' | 'model'; text: string }> = [
       ...chatTurns,

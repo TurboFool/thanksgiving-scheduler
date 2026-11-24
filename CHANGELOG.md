@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.2] — 2026-11-24
+
+### Improved
+- **Default Schedule Evaluation Prompt (`GeminiModal.tsx`)**: Updated the initial prompt sent to Gemini when clicking **Evaluate Current Schedule** to explicitly ask for optimal appliance and operating mode choices (e.g., `Convection` vs. `Bake`), preheat/cooldown temperature gaps, and explanations of how and why mode/appliance trade-offs were decided.
+
+---
+
 ## [2.14.1] — 2026-11-24
 
 ### Fixed & Improved
