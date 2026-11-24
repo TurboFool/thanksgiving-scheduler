@@ -1823,6 +1823,7 @@ export function App() {
                       <div className="upnext-top">
                         <div
                           className="upnext-title"
+                          title={s.title}
                           style={{
                             flex: 1,
                             minWidth: 0,
@@ -1981,7 +1982,7 @@ export function App() {
                         <div key={s.id} className={`timer-card ${isRinging ? 'ringing' : ''}`}>
                           <div className="timer-card-top">
                             <div>
-                              <div className="timer-title">{s.title}</div>
+                              <div className="timer-title" title={s.title}>{s.title}</div>
                               <div className="timer-meta">
                                 <span>{app?.name}</span>
                                 {isUntimed && (
@@ -2121,7 +2122,7 @@ export function App() {
                         style={{ cursor: 'pointer' }}
                       >
                         <div className="upnext-top">
-                          <div className="upnext-title" style={{ flex: 1, minWidth: 0 }}>
+                          <div className="upnext-title" title={s.title} style={{ flex: 1, minWidth: 0 }}>
                             {s.title}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
@@ -2227,7 +2228,7 @@ export function App() {
                         style={{ opacity: 0.7, background: 'var(--status-sage-soft)' }}
                       >
                         <div className="upnext-info">
-                          <div className="upnext-title" style={{ textDecoration: 'line-through' }}>
+                          <div className="upnext-title" title={s.title} style={{ textDecoration: 'line-through' }}>
                             {s.title}
                           </div>
                           <div className="upnext-sub">

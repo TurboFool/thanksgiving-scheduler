@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.13.1] — 2026-11-24
+
+### Improved
+- **Kitchen Mode Step Title Tooltips (`App.tsx`)**: Added `title={s.title}` tooltips on step titles across **Dish Steps**, **Active Timers**, **Up Next**, and **Completed** lists so hovering over any truncated step name shows the full title.
+
+---
+
 ## [2.13.0] — 2026-11-23
 
 ### Improved & Added
