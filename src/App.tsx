@@ -153,6 +153,27 @@ export function App() {
   const [cloudUpdateAvailable, setCloudUpdateAvailable] = useState<ThymeLineWorkspace | null>(
     null
   );
+  const [lastSyncedAt, setLastSyncedAt] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem('thymeline_last_synced_at_v1'));
+      return Number.isFinite(saved) && saved > 0 ? saved : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const hasUnsyncedChanges =
+    Boolean(settings.syncPasscode.trim() || workspace.syncVersion > 0) &&
+    workspace.updatedAt > lastSyncedAt;
+
+  useEffect(() => {
+    try {
+      if (lastSyncedAt > 0) {
+        localStorage.setItem('thymeline_last_synced_at_v1', String(lastSyncedAt));
+      }
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [lastSyncedAt]);
 
   const warned5MinRef = useRef<Set<string>>(new Set());
   const dueAlertedRef = useRef<Set<string>>(new Set());
@@ -205,8 +226,16 @@ export function App() {
       .then((res) => {
         if (cancelled) return;
         const remoteVer = res.syncVersion ?? res.workspace?.syncVersion ?? 0;
-        if (res.exists && res.workspace && remoteVer > workspace.syncVersion) {
-          setCloudUpdateAvailable(res.workspace);
+        if (res.exists && res.workspace) {
+          if (remoteVer > workspace.syncVersion) {
+            setCloudUpdateAvailable(res.workspace);
+          } else if (
+            remoteVer === workspace.syncVersion &&
+            lastSyncedAt === 0 &&
+            workspace.updatedAt <= res.workspace.updatedAt
+          ) {
+            setLastSyncedAt(res.workspace.updatedAt);
+          }
         }
       })
       .catch(() => {
@@ -1734,10 +1763,23 @@ export function App() {
           <button
             type="button"
             className="btn btn-secondary"
+            style={
+              hasUnsyncedChanges
+                ? {
+                    borderColor: 'var(--status-amber)',
+                    background: 'var(--status-amber-soft)',
+                  }
+                : undefined
+            }
             onClick={() => setShowSyncModal(true)}
-            title="Cloudflare R2/KV Sync"
+            title={
+              hasUnsyncedChanges
+                ? 'Unsynced local changes — click to save to cloud backup'
+                : 'Cloudflare R2/KV Sync (in sync)'
+            }
           >
             <Cloud size={14} /> Sync
+            {hasUnsyncedChanges && <span className="sync-dirty-dot" aria-label="Unsynced changes" />}
           </button>
 
           <button
@@ -1868,6 +1910,7 @@ export function App() {
                     onClick={() => {
                       pushUndo('Sync down newer cloud version');
                       setWorkspace(cloudUpdateAvailable);
+                      setLastSyncedAt(cloudUpdateAvailable.updatedAt);
                       setSelectedStepId(null);
                       setSelectedDish(null);
                       showToast(`Synced from cloud (v${cloudUpdateAvailable.syncVersion})`);
@@ -2931,15 +2974,18 @@ export function App() {
         <SyncModal
           workspace={workspace}
           passcode={settings.syncPasscode}
+          hasUnsyncedChanges={hasUnsyncedChanges}
           onOpenSettings={() => setShowSettingsModal(true)}
           onApplyRemoteWorkspace={(remote) => {
             setWorkspace(remote);
+            setLastSyncedAt(remote.updatedAt);
             setSelectedStepId(null);
             setSelectedDish(null);
             showToast(`Synced from cloud (v${remote.syncVersion})`);
           }}
           onMarkSynced={(syncVersion, updatedAt) => {
             setWorkspace((prev) => ({ ...prev, syncVersion, updatedAt }));
+            setLastSyncedAt(updatedAt);
             showToast(`Saved to cloud (v${syncVersion})`);
           }}
           onClose={() => setShowSyncModal(false)}

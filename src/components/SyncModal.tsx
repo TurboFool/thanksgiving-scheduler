@@ -6,6 +6,7 @@ import { pullCloudWorkspace, pushCloudWorkspace } from '../sync';
 interface SyncModalProps {
   workspace: ThymeLineWorkspace;
   passcode: string;
+  hasUnsyncedChanges?: boolean;
   onOpenSettings: () => void;
   onApplyRemoteWorkspace: (remote: ThymeLineWorkspace) => void;
   onMarkSynced: (syncVersion: number, updatedAt: number) => void;
@@ -15,6 +16,7 @@ interface SyncModalProps {
 export const SyncModal: React.FC<SyncModalProps> = ({
   workspace,
   passcode,
+  hasUnsyncedChanges = false,
   onOpenSettings,
   onApplyRemoteWorkspace,
   onMarkSynced,
@@ -124,6 +126,9 @@ export const SyncModal: React.FC<SyncModalProps> = ({
             style={{
               display: 'flex',
               justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 8,
               padding: '8px 10px',
               borderRadius: 'var(--radius-sm)',
               background: 'var(--bg-canvas)',
@@ -131,8 +136,17 @@ export const SyncModal: React.FC<SyncModalProps> = ({
               fontSize: '0.78rem',
             }}
           >
-            <span>
-              Local Version: <strong className="mono">v{workspace.syncVersion}</strong>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span>
+                Local Version: <strong className="mono">v{workspace.syncVersion}</strong>
+              </span>
+              {hasUnsyncedChanges ? (
+                <span className="pill delayed">Unsynced local changes</span>
+              ) : workspace.syncVersion > 0 ? (
+                <span className="pill" style={{ background: 'var(--status-sage-soft)', color: 'var(--accent-sage)' }}>
+                  In sync
+                </span>
+              ) : null}
             </span>
             <span style={{ color: 'var(--ink-muted)' }}>
               {workspace.events.length} event(s) · {workspace.mealLibrary.length} library dish(es)

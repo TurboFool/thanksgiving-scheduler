@@ -37,7 +37,7 @@ All scheduling and cascading math runs **100% locally and deterministically** in
 ## 4. Cloud Sync, Settings, Gemini Skill & Deployment (`functions/api/sync.ts`, `src/sync.ts`, `SettingsModal.tsx`, `src/gemini.ts`)
 
 - **Production Domain**: `https://thymeline.sariandjarrett.com` (hosted on Cloudflare Pages).
-- **Cloudflare Pages Function** (`GET`/`PUT /api/sync`): Backed by R2 bucket `app-thymeline` bound as `THYMELINE_BUCKET` (or optional KV namespace `THYMELINE_KV`), protected by the `SYNC_PASSCODE` secret under **Settings → Variables and Secrets** with optimistic `syncVersion` conflict detection.
+- **Cloudflare Pages Function** (`GET`/`PUT /api/sync`): Backed by R2 bucket `app-thymeline` bound as `THYMELINE_BUCKET` (or optional KV namespace `THYMELINE_KV`), protected by the `SYNC_PASSCODE` secret under **Settings → Variables and Secrets** with optimistic `syncVersion` conflict detection and an unsynced-local-changes indicator (`lastSyncedAt`) on the header **Sync** button and in `SyncModal`.
 - **Unified Settings (`SettingsModal.tsx`)**: Centralizes Gemini API key, sync passcode, audio/voice toggles, **Test Bell**, **Test Voice**, simulated clock, and SemVer version display (`__APP_VERSION__`).
 - **Gemini Skill Versioning (`src/gemini.ts`, `GeminiModal.tsx`)**: `GEMINI_SKILL_VERSION` versions the copyable Gemini Gem/Skill prompt (`buildGeminiSkillInstructions`) and is displayed in `GeminiModal.tsx`. Any schema/scheduling changes affecting the skill require updating the prompt, bumping `GEMINI_SKILL_VERSION`, and alerting the user.
 - `localStorage` (`thymeline_workspace_v1`, `thymeline_settings_v1`) caches everything locally for offline kitchen reliability.

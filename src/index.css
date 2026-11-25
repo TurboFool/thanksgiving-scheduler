@@ -1072,6 +1072,16 @@ textarea {
   white-space: pre-wrap;
 }
 
+.sync-dirty-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-amber);
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.22);
+  flex-shrink: 0;
+}
+
 .toast-banner {
   position: fixed;
   bottom: 20px;

@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.15.2] — 2026-11-25
+
+### Added
+- **Unsynced Local Changes Indicator (`App.tsx`, `SyncModal.tsx`, `index.css`)**:
+  - Added `lastSyncedAt` tracking (`thymeline_last_synced_at_v1`) to detect when local workspace edits (`workspace.updatedAt > lastSyncedAt`) have not yet been pushed to the cloud backup.
+  - Highlighted the header **Sync** button with an amber dot (`.sync-dirty-dot`) and border/tint when unsynced changes exist, and added an **Unsynced local changes** / **In sync** status pill inside `SyncModal`.
+
+---
+
 ## [2.15.1] — 2026-11-25
 
 ### Added
