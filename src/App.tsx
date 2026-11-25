@@ -2204,10 +2204,17 @@ export function App() {
                 </div>
                 {dishSteps.map((s) => {
                   const app = applianceMap.get(s.resolvedApplianceId || s.applianceId);
+                  const prereqsDone = s.effectivePrereqs.every((pId) =>
+                    schedule.steps.some((st) => st.id === pId && st.status === 'done')
+                  );
+                  const isReadyNow =
+                    !isAutoSim && s.status === 'pending' && prereqsDone && s.startMin <= nowMin;
+                  const isOverdue = isReadyNow && s.delayMin > 5;
+                  const readyClass = isOverdue ? 'is-overdue' : isReadyNow ? 'is-ready' : '';
                   return (
                     <div
                       key={s.id}
-                      className="upnext-item stacked"
+                      className={`upnext-item stacked ${readyClass}`}
                       onClick={() => {
                         setSelectedStepId(s.id);
                         setEditingStep({ step: s, parentItemId: activeDishGroup.item.id });
@@ -2231,6 +2238,22 @@ export function App() {
                           {s.title}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                          {isReadyNow && (
+                            <span
+                              style={{
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                color: isOverdue ? 'var(--status-crimson)' : 'var(--accent-sage)',
+                              }}
+                              title={
+                                isOverdue
+                                  ? `Overdue by ${s.delayMin}m past scheduled start`
+                                  : 'Prerequisites complete — ready to start now'
+                              }
+                            >
+                              {isOverdue ? `OVERDUE +${s.delayMin}m` : 'READY'}
+                            </span>
+                          )}
                           {s.status === 'pending' && s.requiresTimer === false && (
                             <>
                               <button
@@ -2523,10 +2546,16 @@ export function App() {
                   {upNextSteps.map((s) => {
                     const app = applianceMap.get(s.resolvedApplianceId || s.applianceId);
                     const startsIn = s.startMin - nowMin;
+                    const prereqsDone = s.effectivePrereqs.every((pId) =>
+                      schedule.steps.some((st) => st.id === pId && st.status === 'done')
+                    );
+                    const isReadyNow = !isAutoSim && prereqsDone && startsIn <= 0;
+                    const isOverdue = isReadyNow && s.delayMin > 5;
+                    const readyClass = isOverdue ? 'is-overdue' : isReadyNow ? 'is-ready' : '';
                     return (
                       <div
                         key={s.id}
-                        className="upnext-item stacked"
+                        className={`upnext-item stacked ${readyClass}`}
                         onClick={() => {
                           setSelectedStepId(s.id);
                           setEditingStep({ step: s });
@@ -2543,10 +2572,21 @@ export function App() {
                                 style={{
                                   fontSize: '0.68rem',
                                   fontWeight: 700,
-                                  color: 'var(--accent-sage)',
+                                  color: isOverdue ? 'var(--status-crimson)' : 'var(--accent-sage)',
                                 }}
+                                title={
+                                  isOverdue
+                                    ? `Overdue by ${s.delayMin}m past scheduled start`
+                                    : prereqsDone
+                                    ? 'Prerequisites complete — ready to start now'
+                                    : 'Waiting for prerequisite step to finish'
+                                }
                               >
-                                DUE
+                                {isOverdue
+                                  ? `OVERDUE +${s.delayMin}m`
+                                  : prereqsDone
+                                  ? 'READY'
+                                  : 'DUE'}
                               </span>
                             )}
                             {s.requiresTimer === false ? (

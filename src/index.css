@@ -524,6 +524,24 @@ textarea {
   border-color: var(--border-strong);
 }
 
+.upnext-item.is-ready {
+  background: #eef7f0;
+  border-color: #9fd3aa;
+}
+
+.upnext-item.is-ready:hover {
+  border-color: var(--accent-sage);
+}
+
+.upnext-item.is-overdue {
+  background: #fdf0f3;
+  border-color: #f0aebc;
+}
+
+.upnext-item.is-overdue:hover {
+  border-color: var(--status-crimson);
+}
+
 .upnext-info {
   min-width: 0;
   flex: 1;

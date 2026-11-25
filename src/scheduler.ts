@@ -647,17 +647,17 @@ export function computeSchedule(
 
     let earliest =
       step.pinnedStartMin !== undefined
-        ? step.pinnedStartMin
+        ? Math.max(step.pinnedStartMin, nowMin)
         : step.relativeDeps?.length
         ? nowMin
         : Math.max(idealStart.get(id)!, nowMin);
-    if (step.pinnedStartMin === undefined) {
-      for (const pId of prereqs.get(id) ?? []) {
-        const pEnd = liveEnd.get(pId);
-        if (pEnd !== undefined && pEnd > earliest) {
-          earliest = pEnd;
-        }
+    for (const pId of prereqs.get(id) ?? []) {
+      const pEnd = liveEnd.get(pId);
+      if (pEnd !== undefined && pEnd > earliest) {
+        earliest = pEnd;
       }
+    }
+    if (step.pinnedStartMin === undefined) {
       for (const rel of step.relativeDeps ?? []) {
         const tStart = liveStart.get(rel.stepId);
         const tEnd = liveEnd.get(rel.stepId);

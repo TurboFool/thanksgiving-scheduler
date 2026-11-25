@@ -5,6 +5,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.16.1] — 2026-11-25
+
+### Improved
+- **Ready (Light Green) & Overdue (Light Pink) Kitchen Mode Step Tinting (`App.tsx`, `index.css`)**:
+  - Pending steps in **Up Next** and **Dish Steps** now tint light green (`.is-ready` with `READY` label) when all prerequisites are complete and `nowMin >= startMin` (0–5 min past scheduled start), and transition to light pink (`.is-overdue` with `OVERDUE +Xm` label) once they remain unstarted `> 5` minutes past their scheduled start time.
+- **Live Schedule Slip for Pinned Steps (`scheduler.ts`)**:
+  - Updated Pass 2 (`computeSchedule`) so manually pinned pending steps also slip forward to `nowMin` once `nowMin > pinnedStartMin` and respect delayed prerequisites, ensuring downstream dependencies and appliance-bound steps cascade gracefully as reality changes.
+
+---
+
 ## [2.16.0] — 2026-11-25
 
 ### Added
