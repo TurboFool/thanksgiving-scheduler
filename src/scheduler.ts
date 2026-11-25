@@ -7,7 +7,15 @@ interface Interval {
   slots: number;
   temp?: number;
   mode?: string;
+  stepKind?: 'cooking' | 'preheat';
   row: number;
+}
+
+export function getInitialPreheatDurationMin(targetTemp: number, appliance: Appliance): number {
+  if (appliance.preheatBufferMin !== undefined && appliance.preheatBufferMin > 0) {
+    return appliance.preheatBufferMin;
+  }
+  return Math.min(20, Math.max(10, Math.ceil(Math.max(0, targetTemp - 70) / 80) * 5));
 }
 
 export function getRequiredTempTransition(
@@ -49,7 +57,8 @@ function findValidPlacement(
   appliance: Appliance,
   existing: Interval[],
   sharedAnchorStepIds?: Set<string>,
-  stepMode?: string
+  stepMode?: string,
+  stepKind?: 'cooking' | 'preheat'
 ): { valid: boolean; row: number } {
   if (slots > appliance.capacity) {
     // Even if misconfigured, allow at row 0 so scheduler never infinite-loops
@@ -57,9 +66,10 @@ function findValidPlacement(
   }
 
   // Enforce preheat/cooldown transition gaps between sequential uses when temperature changes > tolerance
-  if (appliance.hasTemperature && temp !== undefined) {
+  // (Skip when either step is already an explicit preheat step)
+  if (appliance.hasTemperature && temp !== undefined && stepKind !== 'preheat') {
     for (const iv of existing) {
-      if (iv.temp === undefined) continue;
+      if (iv.temp === undefined || iv.stepKind === 'preheat') continue;
       if (iv.end <= start) {
         const trans = getRequiredTempTransition(iv.temp, temp, appliance);
         if (trans && start - iv.end < trans.durationMin) {
@@ -411,7 +421,8 @@ export function computeSchedule(
           app,
           appIntervals,
           undefined,
-          tryMode
+          tryMode,
+          step.stepKind
         );
         if (check.valid) {
           if (supportsReq && candEnd > bestMatchEnd) {
@@ -449,6 +460,7 @@ export function computeSchedule(
       slots: step.slotsRequired,
       temp: step.temperature,
       mode: chosenMode,
+      stepKind: step.stepKind,
       row: chosenRow,
     });
     idealIntervalsByApp.set(chosenApp.id, targetIntervals);
@@ -729,7 +741,8 @@ export function computeSchedule(
             app,
             appIntervals,
             sharedAnchors,
-            tryMode
+            tryMode,
+            step.stepKind
           );
           if (check.valid) {
             const isExactMatch =
@@ -802,6 +815,7 @@ export function computeSchedule(
       slots: step.slotsRequired,
       temp: step.temperature,
       mode: chosen.mode,
+      stepKind: step.stepKind,
       row: chosen.row,
     });
     liveIntervalsByApp.set(chosen.app.id, targetIntervals);
@@ -850,10 +864,11 @@ export function computeSchedule(
     const resolvedAppId = liveApp.get(s.id) ?? '';
     const resolvedApp = resolvedAppId ? applianceMap.get(resolvedAppId) : undefined;
     let transitionBefore: TempTransition | undefined;
-    if (resolvedApp && resolvedApp.hasTemperature && s.temperature !== undefined) {
+    if (resolvedApp && resolvedApp.hasTemperature && s.temperature !== undefined && s.stepKind !== 'preheat') {
       let latestPrevEnd = -Infinity;
       let prevTemp: number | undefined;
       let prevStepId: string | undefined;
+      let prevStepKind: 'cooking' | 'preheat' | undefined;
       for (const other of rawSteps) {
         if (other.id === s.id) continue;
         if ((liveApp.get(other.id) ?? '') !== resolvedAppId) continue;
@@ -863,9 +878,10 @@ export function computeSchedule(
           latestPrevEnd = otherEnd;
           prevTemp = other.temperature;
           prevStepId = other.id;
+          prevStepKind = other.stepKind;
         }
       }
-      if (prevTemp !== undefined && prevStepId) {
+      if (prevTemp !== undefined && prevStepId && prevStepKind !== 'preheat') {
         const trans = getRequiredTempTransition(prevTemp, s.temperature, resolvedApp);
         if (trans) {
           transitionBefore = {

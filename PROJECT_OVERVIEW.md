@@ -17,7 +17,7 @@ Cooking a large family or holiday meal involves tightly coupled constraints:
 ## 2. Core Data Model (`src/types.ts`)
 
 - **`Appliance`**: `id`, `name`, `category?`, `supportedModes?`, `capacity`, `slotLabel`, `hasTemperature`, `tempTolerance`, `preheatBufferMin?`, `cooldownBufferMin?`, `color`
-- **`MealStep`**: `id`, `title`, `dish`, `durationMin`, `applianceId` (specific ID, `category:<Name>`, or `''` unassigned), `applianceMode?`, `modePreference?`, `slotsRequired`, `temperature?`, `dependencies[]`, `readyBeforeIds[]`, `relativeDeps?`, `mustFinishByDinner`, `requiresTimer?`, `finishConstraint?`, `pinnedStartMin?`, `canPrepEarly?`, `earlyPrepMinBefore?`, `earlyPrepMaxBefore?`, `preservationNotes?`, plus live timer fields.
+- **`MealStep`**: `id`, `title`, `dish`, `stepKind?`, `durationMin`, `applianceId` (specific ID, `category:<Name>`, or `''` unassigned), `applianceMode?`, `modePreference?`, `slotsRequired`, `temperature?`, `dependencies[]`, `readyBeforeIds[]`, `relativeDeps?`, `mustFinishByDinner`, `requiresTimer?`, `finishConstraint?`, `pinnedStartMin?`, `canPrepEarly?`, `earlyPrepMinBefore?`, `earlyPrepMaxBefore?`, `preservationNotes?`, plus live timer fields.
 - **`MealItem`**: `id`, `name`, `course`, `servings?`, `portionMultiplier?`, `dietaryTags?`, `rawNotes`, `sourceUrl?`, `ingredients?`, `recipeInstructions?`, `convertedNotes`, `prepAheadNotes?`, `scalingReview?`, `finishConstraint`, `steps[]`, `aiProcessedAt?`, `manualChangeLog[]`, `libraryItemId?`
 - **`MealEvent`**: `id`, `name`, `targetDinnerMin`, `simulatedNowMin`, `mealItems[]`, `appliancesOverride?`
 - **`ThymeLineWorkspace`**: `schemaVersion`, `syncVersion`, `activeEventId`, `events[]`, `mealLibrary[]`, `defaultAppliances[]`

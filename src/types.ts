@@ -35,6 +35,8 @@ export interface MealStep {
   id: string;
   title: string;
   dish: string;
+  /** Optional step category: 'preheat' for standalone appliance preheat steps */
+  stepKind?: 'cooking' | 'preheat';
   /** Planned duration in minutes */
   durationMin: number;
   /** Appliance ID */

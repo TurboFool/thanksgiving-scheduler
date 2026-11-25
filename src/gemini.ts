@@ -69,7 +69,7 @@ Rules:
   }`;
 }
 
-export const GEMINI_SKILL_VERSION = '1.1.0';
+export const GEMINI_SKILL_VERSION = '1.2.0';
 
 export function buildGeminiSkillInstructions(appliances: Appliance[]): string {
   const appSummary = appliances
@@ -187,7 +187,8 @@ ${categories.map((c) => `- "category:${c}"`).join('\n') || '- (none)'}
    - When a step happens *during* another ongoing timer (e.g., adding apples 60m before cider ends, or basting 30m after roast starts), use \`"relativeDeps": [{ "stepId": "<target-id>", "anchor": "before_end" | "after_start" | "after_end", "offsetMin": 60 }]\` and leave that target OUT of \`"dependencies"\`.
 5. **Split Distinct Phases**: Never merge distinct timed phases (e.g., "sauté 7m, stir in thickener, boil 2m") into one step — split them into sequential steps linked via \`"dependencies"\`.
 6. **Valid Appliance IDs & Modes**: Use only the appliance IDs listed above, \`"category:<Name>"\`, or \`""\` (unassigned). Omit/null \`temperature\` when \`hasTemperature\` is \`false\`. When a step uses a specific operating mode (e.g., \`"Convection"\`, \`"Broil"\`, \`"Air Fryer"\`), set \`"applianceMode"\` (matching \`supportedModes\` when possible) and \`"modePreference": "required" | "preferred"\`. Note that ThymeLine enforces mode exclusivity (no simultaneous mixed modes on one unit) and automatically inserts preheat/cooldown buffers between sequential uses when temperature changes beyond \`tempTolerance\`.
-7. When the user says they are ready to import, return **ONLY the JSON code block** with no extra commentary inside the JSON.`;
+7. **Standalone Appliance Preheats**: For oven/air-fryer dishes, you may optionally include a separate \`"Prep / Other"\` item (or let the user's **Auto-Generate Preheats** button create them) with \`"stepKind": "preheat"\` and \`"mustFinishByDinner": false\`, and link the cooking step's \`"dependencies"\` to that preheat step ID.
+8. When the user says they are ready to import, return **ONLY the JSON code block** with no extra commentary inside the JSON.`;
 }
 
 export function parseImportedSteps(rawInput: string, appliances: Appliance[]): MealStep[] {
@@ -223,6 +224,7 @@ export function parseImportedSteps(rawInput: string, appliances: Appliance[]): M
       id: String(item.id || `step-${idx + 1}`),
       title: String(item.title || `Step ${idx + 1}`),
       dish: String(item.dish || 'General'),
+      ...(item.stepKind === 'preheat' ? { stepKind: 'preheat' as const } : {}),
       durationMin,
       applianceId,
       applianceMode: item.applianceMode ? String(item.applianceMode).trim() : undefined,
@@ -1129,6 +1131,18 @@ export interface ScheduleAdjustmentProposal {
   slotsRequired?: number;
   temperature?: number;
   pinnedStartMin?: number | null;
+  dependencies?: string[];
+  reason: string;
+}
+
+export interface NewPreheatStepProposal {
+  id: string;
+  title: string;
+  applianceId: string;
+  applianceMode?: string;
+  temperature?: number;
+  durationMin: number;
+  dependentStepIds: string[];
   reason: string;
 }
 
@@ -1144,6 +1158,7 @@ export interface VerifiedScheduleOutcome {
 export interface ScheduleEvaluationResult {
   reply: string;
   recommendedUpdates: ScheduleAdjustmentProposal[];
+  newPreheatSteps?: NewPreheatStepProposal[];
   unresolvedQuestions?: string[];
   verifiedOutcome?: VerifiedScheduleOutcome;
 }
@@ -1187,12 +1202,14 @@ export async function evaluateAndAdjustScheduleWithGemini(
           }`
         : '';
       const decisionTag = s.modeDecisionNote ? ` [MODE FALLBACK: ${s.modeDecisionNote}]` : '';
+      const kindTag = s.stepKind === 'preheat' ? ' [PREHEAT]' : '';
+      const depsTag = s.dependencies.length > 0 ? `, deps: [${s.dependencies.join(', ')}]` : '';
       const notesSnippet = s.notes ? `, notes: "${s.notes.slice(0, 140)}"` : '';
-      return `- stepId: "${s.id}", dish: "${s.dish}", title: "${s.title}", status: ${s.status}, time: ${formatTimeMin(
+      return `- stepId: "${s.id}"${kindTag}, dish: "${s.dish}", title: "${s.title}", status: ${s.status}, time: ${formatTimeMin(
         s.startMin
       )}–${formatTimeMin(s.endMin)} (${s.durationMin}m), location: ${loc}${modeTag}${decisionTag}, slots: ${s.slotsRequired}${
         s.temperature ? `, temp: ${s.temperature}°F` : ''
-      }${s.isDelayed ? ` [DELAYED +${s.delayMin}m]` : ''}${lateTag}${
+      }${depsTag}${s.isDelayed ? ` [DELAYED +${s.delayMin}m]` : ''}${lateTag}${
         s.canPrepEarly ? ` [CAN PREP EARLY]` : ''
       }${notesSnippet}`;
     })
@@ -1224,15 +1241,16 @@ Evaluate the current schedule for:
 1. Any UNASSIGNED steps that need an appliance (or "category:<Name>") assigned.
 2. Appliance modes & exclusivity: an appliance can only run ONE mode at a time (e.g., Air Fryer vs Toaster on a Toaster Oven, or Convection vs Bake on an Oven). Check each step's notes and dish notes: if a step mentions a mode (like Convection, Bake, Broil, Air Fryer) and doesn't yet have "applianceMode" set, set "applianceMode" (matching an appliance's supportedModes) and "modePreference" ("preferred" or "required"), and assign it to an appliance supporting that mode.
 3. Mode trade-off & decision transparency: whenever you choose one mode over another supported/preferred mode (e.g., keeping Convection on Bottom Oven vs. falling back to Bake on Top Oven, or adjusting temperature for Convection vs. Conventional), explicitly explain HOW and WHY in both "reply" and each update's "reason".
-4. Oven/appliance rack bottlenecks, temperature conflicts (including preheat/cooldown gaps), or steps that can be spread across multiple appliances in the same category.
-5. Steps finishing past Target Serve Time, excessive delays, or dishes that could be prepped early / moved to an earlier slot (use pinnedStartMin in minutes from midnight, or null to unpin).
-6. Any specific corrections or preferences the user asks for in the conversation.
+4. Standalone Appliance Preheats ([PREHEAT]): if a temperature-controlled appliance (hasTemperature: true) has a cooking step without an existing [PREHEAT] step preceding it (or needs a preheat for a temperature jump), you may propose entries in "newPreheatSteps" (with unique kebab-case "id" like "preheat-oven-375", "applianceId", "applianceMode", "temperature", "durationMin", and "dependentStepIds" listing the cooking step IDs that depend on it), or adjust existing [PREHEAT] steps and "dependencies" in "recommendedUpdates".
+5. Oven/appliance rack bottlenecks, temperature conflicts (including preheat/cooldown gaps), or steps that can be spread across multiple appliances in the same category.
+6. Steps finishing past Target Serve Time, excessive delays, or dishes that could be prepped early / moved to an earlier slot (use pinnedStartMin in minutes from midnight, or null to unpin).
+7. Any specific corrections or preferences the user asks for in the conversation.
 
 IMPORTANT: If there is a conflict you CANNOT resolve automatically without a user decision (e.g., two dishes require incompatible oven temperatures or modes at the exact same time with no free oven, or total prep/cook exceeds available time), list concise questions in "unresolvedQuestions" so the user can choose.
 
 Return ONLY a valid JSON object:
 {
-  "reply": "Clear, concise summary of conflicts, mode decisions (how & why one mode was chosen over another), unassigned steps, and your recommended plan (under 240 words).",
+  "reply": "Clear, concise summary of conflicts, mode decisions (how & why one mode was chosen over another), preheat recommendations, unassigned steps, and your recommended plan (under 250 words).",
   "recommendedUpdates": [
     {
       "stepId": "exact-step-id-from-above",
@@ -1244,12 +1262,25 @@ Return ONLY a valid JSON object:
       "slotsRequired": 1,
       "temperature": 350,
       "pinnedStartMin": null,
+      "dependencies": ["optional-updated-dependency-ids"],
       "reason": "Brief reason for this change, including why this mode/appliance was chosen"
+    }
+  ],
+  "newPreheatSteps": [
+    {
+      "id": "preheat-oven-375",
+      "title": "Preheat Bottom Oven to 375°F",
+      "applianceId": "oven",
+      "applianceMode": "Convection",
+      "temperature": 375,
+      "durationMin": 15,
+      "dependentStepIds": ["roast-turkey-covered"],
+      "reason": "Initial preheat before roasting turkey"
     }
   ],
   "unresolvedQuestions": ["Optional question if a trade-off requires user input"]
 }
-Only include fields in each update object that actually need to change.`;
+Only include fields in each update object that actually need to change, and omit or leave "newPreheatSteps" empty if no new preheat steps are needed.`;
 
   const contents = [
     { role: 'user', parts: [{ text: systemContext }] },
@@ -1273,6 +1304,25 @@ Only include fields in each update object that actually need to change.`;
     recommendedUpdates: Array.isArray(parsed.recommendedUpdates)
       ? parsed.recommendedUpdates
       : [],
+    newPreheatSteps: Array.isArray(parsed.newPreheatSteps)
+      ? parsed.newPreheatSteps
+          .filter((p) => p && typeof p.id === 'string' && typeof p.applianceId === 'string')
+          .map((p) => ({
+            id: String(p.id).trim(),
+            title: String(p.title || 'Preheat Appliance').trim(),
+            applianceId: String(p.applianceId).trim(),
+            applianceMode: p.applianceMode ? String(p.applianceMode).trim() : undefined,
+            temperature:
+              p.temperature !== undefined && p.temperature !== null
+                ? Number(p.temperature)
+                : undefined,
+            durationMin: Math.max(5, Math.round(Number(p.durationMin) || 15)),
+            dependentStepIds: Array.isArray(p.dependentStepIds)
+              ? p.dependentStepIds.map(String)
+              : [],
+            reason: String(p.reason || 'Appliance preheat').trim(),
+          }))
+      : [],
     unresolvedQuestions: Array.isArray(parsed.unresolvedQuestions)
       ? parsed.unresolvedQuestions.map((q) => String(q).trim()).filter(Boolean)
       : [],
@@ -1281,30 +1331,74 @@ Only include fields in each update object that actually need to change.`;
 
 function applyScheduleUpdatesToSteps(
   steps: MealStep[],
-  updates: ScheduleAdjustmentProposal[]
+  updates: ScheduleAdjustmentProposal[],
+  newPreheats: NewPreheatStepProposal[] = [],
+  appliances: Appliance[] = []
 ): MealStep[] {
-  if (updates.length === 0) return steps;
+  const appMap = new Map(appliances.map((a) => [a.id, a]));
+  const existingIds = new Set(steps.map((s) => s.id));
+  const extraSteps: MealStep[] = newPreheats
+    .filter((p) => !existingIds.has(p.id))
+    .map((p) => {
+      const app = appMap.get(p.applianceId);
+      return {
+        id: p.id,
+        title: p.title,
+        dish: 'Appliance Preheats',
+        stepKind: 'preheat',
+        durationMin: Math.max(5, Math.round(p.durationMin)),
+        applianceId: p.applianceId,
+        applianceMode: p.applianceMode,
+        modePreference: p.applianceMode ? 'preferred' : undefined,
+        slotsRequired: app?.capacity ?? 1,
+        temperature: p.temperature,
+        dependencies: [],
+        readyBeforeIds: [],
+        mustFinishByDinner: false,
+        requiresTimer: true,
+        notes: p.reason,
+        status: 'pending',
+        remainingSec: Math.max(5, Math.round(p.durationMin)) * 60,
+        addedMin: 0,
+      };
+    });
+
+  const extraDepsForStep = new Map<string, string[]>();
+  for (const p of newPreheats) {
+    for (const depTargetId of p.dependentStepIds) {
+      const list = extraDepsForStep.get(depTargetId) ?? [];
+      if (!list.includes(p.id)) list.push(p.id);
+      extraDepsForStep.set(depTargetId, list);
+    }
+  }
+
   const updateMap = new Map(updates.map((u) => [u.stepId, u]));
-  return steps.map((s) => {
+  const updatedExisting = steps.map((s) => {
     const u = updateMap.get(s.id);
-    if (!u) return s;
+    const addedDeps = extraDepsForStep.get(s.id) ?? [];
+    if (!u && addedDeps.length === 0) return s;
+    const baseDeps = u?.dependencies ?? s.dependencies;
+    const mergedDeps = Array.from(new Set([...baseDeps, ...addedDeps]));
     return {
       ...s,
-      ...(u.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
-      ...(u.applianceMode !== undefined ? { applianceMode: u.applianceMode || undefined } : {}),
-      ...(u.modePreference !== undefined ? { modePreference: u.modePreference } : {}),
-      ...(u.pinnedStartMin !== undefined
+      ...(u?.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
+      ...(u?.applianceMode !== undefined ? { applianceMode: u.applianceMode || undefined } : {}),
+      ...(u?.modePreference !== undefined ? { modePreference: u.modePreference } : {}),
+      ...(u?.pinnedStartMin !== undefined
         ? { pinnedStartMin: u.pinnedStartMin === null ? undefined : u.pinnedStartMin }
         : {}),
-      ...(u.durationMin !== undefined ? { durationMin: Math.max(1, Math.round(u.durationMin)) } : {}),
-      ...(u.slotsRequired !== undefined
+      ...(u?.durationMin !== undefined ? { durationMin: Math.max(1, Math.round(u.durationMin)) } : {}),
+      ...(u?.slotsRequired !== undefined
         ? { slotsRequired: Math.max(1, Math.round(u.slotsRequired)) }
         : {}),
-      ...(u.temperature !== undefined
+      ...(u?.temperature !== undefined
         ? { temperature: u.temperature === null ? undefined : u.temperature }
         : {}),
+      dependencies: mergedDeps,
     };
   });
+
+  return [...updatedExisting, ...extraSteps];
 }
 
 function collectRemainingScheduleIssues(
@@ -1363,6 +1457,7 @@ export async function evaluateAndVerifyScheduleWithGemini(
 ): Promise<ScheduleEvaluationResult> {
   let workingSteps = baseSteps.map((s) => ({ ...s }));
   const mergedUpdates = new Map<string, ScheduleAdjustmentProposal>();
+  const mergedPreheats = new Map<string, NewPreheatStepProposal>();
   let workingConversation = [...conversation];
   let latestReply = '';
   let latestQuestions: string[] = [];
@@ -1396,12 +1491,24 @@ export async function evaluateAndVerifyScheduleWithGemini(
       const prev = mergedUpdates.get(u.stepId);
       mergedUpdates.set(u.stepId, prev ? { ...prev, ...u } : u);
     }
+    for (const p of res.newPreheatSteps ?? []) {
+      const prev = mergedPreheats.get(p.id);
+      mergedPreheats.set(p.id, prev ? { ...prev, ...p } : p);
+    }
 
-    workingSteps = applyScheduleUpdatesToSteps(baseSteps, Array.from(mergedUpdates.values()));
+    workingSteps = applyScheduleUpdatesToSteps(
+      baseSteps,
+      Array.from(mergedUpdates.values()),
+      Array.from(mergedPreheats.values()),
+      appliances
+    );
     latestSim = computeSchedule(workingSteps, appliances, targetDinnerMin, nowMin);
     const remainingIssues = collectRemainingScheduleIssues(latestSim, targetDinnerMin);
 
-    if (remainingIssues.length === 0 || res.recommendedUpdates.length === 0) {
+    if (
+      remainingIssues.length === 0 ||
+      (res.recommendedUpdates.length === 0 && (res.newPreheatSteps?.length ?? 0) === 0)
+    ) {
       break;
     }
 
@@ -1423,6 +1530,7 @@ export async function evaluateAndVerifyScheduleWithGemini(
   return {
     reply: latestReply,
     recommendedUpdates: Array.from(mergedUpdates.values()),
+    newPreheatSteps: Array.from(mergedPreheats.values()),
     unresolvedQuestions: latestQuestions,
     verifiedOutcome: {
       passesRun,

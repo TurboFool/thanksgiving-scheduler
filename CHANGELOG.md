@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.15.0] — 2026-11-25
+
+### Added
+- **Standalone Appliance Preheat Steps & Alerts (`App.tsx`, `types.ts`, `scheduler.ts`, `GanttTimeline.tsx`)**:
+  - Added `stepKind: 'preheat'` support for standalone appliance preheat tasks stored in an event-level **Appliance Preheats** group outside individual dishes, with downstream cooking steps depending on them.
+  - Added a 1-click **Preheats** button in Kitchen Mode to auto-generate initial and mid-event preheat steps for all temperature-controlled appliances and wire dependencies automatically.
+  - Added automatic start-time chime, voice, and toast alerts when a pending preheat (or start-alert) step reaches its scheduled start time in live mode, plus full countdown alarm when started.
+- **Gemini Preheat Proposals (`gemini.ts`, `GeminiModal.tsx`)**:
+  - Updated `evaluateAndAdjustScheduleWithGemini` and `evaluateAndVerifyScheduleWithGemini` to see `[PREHEAT]` steps, propose `newPreheatSteps` with `dependentStepIds`, and verify them in the local simulation loop.
+  - Updated `GEMINI_SKILL_VERSION` to `1.2.0` to document standalone `stepKind: "preheat"` steps.
+
+---
+
 ## [2.14.7] — 2026-11-25
 
 ### Improved

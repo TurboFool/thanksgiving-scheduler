@@ -18,6 +18,7 @@ import {
   GEMINI_SKILL_VERSION,
   generateScheduleWithGemini,
   parseImportedMeals,
+  type NewPreheatStepProposal,
   type ScheduleAdjustmentProposal,
   type VerifiedScheduleOutcome,
 } from '../gemini';
@@ -33,7 +34,10 @@ interface GeminiModalProps {
   nowMin?: number;
   apiKey: string;
   onOpenSettings: () => void;
-  onApplyScheduleUpdates: (updates: ScheduleAdjustmentProposal[]) => void;
+  onApplyScheduleUpdates: (
+    updates: ScheduleAdjustmentProposal[],
+    newPreheats?: NewPreheatStepProposal[]
+  ) => void;
   onImportMeals: (meals: MealItem[], mode: 'add' | 'replace') => void;
   onClose: () => void;
 }
@@ -70,6 +74,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
   const [chatTurns, setChatTurns] = useState<Array<{ role: 'user' | 'model'; text: string }>>([]);
   const [followUpInput, setFollowUpInput] = useState('');
   const [proposedUpdates, setProposedUpdates] = useState<ScheduleAdjustmentProposal[]>([]);
+  const [proposedPreheats, setProposedPreheats] = useState<NewPreheatStepProposal[]>([]);
   const [unresolvedQuestions, setUnresolvedQuestions] = useState<string[]>([]);
   const [verifiedOutcome, setVerifiedOutcome] = useState<VerifiedScheduleOutcome | null>(null);
   const [appliedUpdates, setAppliedUpdates] = useState(false);
@@ -190,6 +195,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
       );
       setChatTurns((prev) => [...prev, { role: 'model', text: res.reply }]);
       setProposedUpdates(res.recommendedUpdates);
+      setProposedPreheats(res.newPreheatSteps ?? []);
       setUnresolvedQuestions(res.unresolvedQuestions ?? []);
       setVerifiedOutcome(res.verifiedOutcome ?? null);
     } catch (err) {
@@ -421,7 +427,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                 </div>
               )}
 
-              {proposedUpdates.length > 0 && (
+              {(proposedUpdates.length > 0 || proposedPreheats.length > 0) && (
                 <div
                   style={{
                     padding: 10,
@@ -435,8 +441,20 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                   }}
                 >
                   <div style={{ fontWeight: 700 }}>
-                    Proposed Timeline Adjustments ({proposedUpdates.length}):
+                    Proposed Timeline Adjustments ({proposedUpdates.length + proposedPreheats.length}):
                   </div>
+                  {proposedPreheats.map((p, idx) => (
+                    <div key={`ph-${idx}`}>
+                      • <strong>[New Preheat] {p.title}</strong> → {p.applianceId}
+                      {p.applianceMode ? ` · ${p.applianceMode}` : ''}
+                      {` · ${p.durationMin}m`}
+                      {p.temperature !== undefined ? ` · ${p.temperature}°F` : ''}
+                      {p.dependentStepIds.length > 0
+                        ? ` (before ${p.dependentStepIds.join(', ')})`
+                        : ''}{' '}
+                      — <span style={{ color: 'var(--ink-secondary)' }}>{p.reason}</span>
+                    </div>
+                  ))}
                   {proposedUpdates.map((u, idx) => (
                     <div key={idx}>
                       • <strong>{u.stepTitle}</strong>
@@ -455,7 +473,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                       style={{ marginTop: 4 }}
                       disabled={appliedUpdates}
                       onClick={() => {
-                        onApplyScheduleUpdates(proposedUpdates);
+                        onApplyScheduleUpdates(proposedUpdates, proposedPreheats);
                         setAppliedUpdates(true);
                       }}
                     >

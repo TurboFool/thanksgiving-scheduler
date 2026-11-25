@@ -38,10 +38,17 @@ import type {
   ThymeLineWorkspace,
 } from './types';
 import { DEFAULT_APPLIANCES, DEFAULT_STEPS } from './defaultData';
-import { computeSchedule, formatCountdownSec, formatDuration, formatTimeMin } from './scheduler';
+import {
+  computeSchedule,
+  formatCountdownSec,
+  formatDuration,
+  formatTimeMin,
+  getInitialPreheatDurationMin,
+} from './scheduler';
 import { soundManager } from './audio';
 import {
   reEvaluateEventWithGemini,
+  type NewPreheatStepProposal,
   type ScheduleAdjustmentProposal,
 } from './gemini';
 import {
@@ -916,41 +923,253 @@ export function App() {
     showToast(`Assigned to ${appLabel}`);
   };
 
-  const handleApplyScheduleUpdates = (updates: ScheduleAdjustmentProposal[]) => {
-    if (updates.length === 0) return;
+  const handleApplyScheduleUpdates = (
+    updates: ScheduleAdjustmentProposal[],
+    newPreheats: NewPreheatStepProposal[] = []
+  ) => {
+    if (updates.length === 0 && newPreheats.length === 0) return;
     const updateMap = new Map(updates.map((u) => [u.stepId, u]));
-    pushUndo(`Apply ${updates.length} Gemini schedule adjustment${updates.length === 1 ? '' : 's'}`);
-    updateActiveEvent((ev) => ({
-      ...ev,
-      mealItems: ev.mealItems.map((it) => ({
+    const totalCount = updates.length + newPreheats.length;
+    pushUndo(`Apply ${totalCount} Gemini schedule adjustment${totalCount === 1 ? '' : 's'}`);
+    updateActiveEvent((ev) => {
+      const existingIds = new Set(ev.mealItems.flatMap((it) => it.steps.map((s) => s.id)));
+      const appMapLocal = new Map((ev.appliancesOverride ?? workspace.defaultAppliances).map((a) => [a.id, a]));
+      const extraPreheatSteps: MealStep[] = newPreheats
+        .filter((p) => !existingIds.has(p.id))
+        .map((p) => {
+          const app = appMapLocal.get(p.applianceId);
+          const dur = Math.max(5, Math.round(p.durationMin));
+          return {
+            id: p.id,
+            title: p.title,
+            dish: 'Appliance Preheats',
+            stepKind: 'preheat',
+            durationMin: dur,
+            applianceId: p.applianceId,
+            applianceMode: p.applianceMode,
+            modePreference: p.applianceMode ? 'preferred' : undefined,
+            slotsRequired: app?.capacity ?? 1,
+            temperature: p.temperature,
+            dependencies: [],
+            readyBeforeIds: [],
+            mustFinishByDinner: false,
+            requiresTimer: true,
+            notes: p.reason,
+            status: 'pending',
+            remainingSec: dur * 60,
+            addedMin: 0,
+          };
+        });
+
+      const extraDepsForStep = new Map<string, string[]>();
+      for (const p of newPreheats) {
+        for (const depTargetId of p.dependentStepIds) {
+          const list = extraDepsForStep.get(depTargetId) ?? [];
+          if (!list.includes(p.id)) list.push(p.id);
+          extraDepsForStep.set(depTargetId, list);
+        }
+      }
+
+      const nextItems = ev.mealItems.map((it) => ({
         ...it,
         steps: it.steps.map((s) => {
           const u = updateMap.get(s.id);
-          if (!u) return s;
+          const addedDeps = extraDepsForStep.get(s.id) ?? [];
+          if (!u && addedDeps.length === 0) return s;
+          const baseDeps = u?.dependencies ?? s.dependencies;
+          const mergedDeps = Array.from(new Set([...baseDeps, ...addedDeps]));
           return {
             ...s,
-            ...(u.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
-            ...(u.applianceMode !== undefined
+            ...(u?.applianceId !== undefined ? { applianceId: u.applianceId } : {}),
+            ...(u?.applianceMode !== undefined
               ? { applianceMode: u.applianceMode || undefined }
               : {}),
-            ...(u.modePreference !== undefined ? { modePreference: u.modePreference } : {}),
-            ...(u.slotsRequired !== undefined
+            ...(u?.modePreference !== undefined ? { modePreference: u.modePreference } : {}),
+            ...(u?.slotsRequired !== undefined
               ? { slotsRequired: Math.max(1, Math.round(u.slotsRequired)) }
               : {}),
-            ...(u.pinnedStartMin !== undefined
+            ...(u?.pinnedStartMin !== undefined
               ? { pinnedStartMin: u.pinnedStartMin === null ? undefined : u.pinnedStartMin }
               : {}),
-            ...(u.durationMin !== undefined ? { durationMin: Math.max(1, Math.round(u.durationMin)) } : {}),
-            ...(u.temperature !== undefined
+            ...(u?.durationMin !== undefined
+              ? { durationMin: Math.max(1, Math.round(u.durationMin)) }
+              : {}),
+            ...(u?.temperature !== undefined
               ? { temperature: u.temperature === null ? undefined : u.temperature }
               : {}),
+            dependencies: mergedDeps,
           };
         }),
-      })),
-    }));
+      }));
+
+      if (extraPreheatSteps.length > 0) {
+        const preheatItemId = `preheats-${ev.id}`;
+        const existingItem = nextItems.find(
+          (it) => it.id === preheatItemId || it.name === 'Appliance Preheats'
+        );
+        if (existingItem) {
+          return {
+            ...ev,
+            mealItems: nextItems.map((it) =>
+              it.id === existingItem.id
+                ? { ...it, steps: [...it.steps, ...extraPreheatSteps], updatedAt: Date.now() }
+                : it
+            ),
+          };
+        }
+        const now = Date.now();
+        return {
+          ...ev,
+          mealItems: [
+            ...nextItems,
+            {
+              id: preheatItemId,
+              name: 'Appliance Preheats',
+              course: 'Prep / Other',
+              rawNotes: 'Standalone appliance preheat tasks & alerts.',
+              convertedNotes: 'Standalone appliance preheat tasks & alerts.',
+              finishConstraint: { mode: 'after_target' },
+              steps: extraPreheatSteps,
+              manualChangeLog: [],
+              updatedAt: now,
+            },
+          ],
+        };
+      }
+
+      return { ...ev, mealItems: nextItems };
+    });
     setScanNotice(null);
     setScanAiAdvice(null);
-    showToast(`Applied ${updates.length} Gemini schedule update${updates.length === 1 ? '' : 's'}`);
+    showToast(`Applied ${totalCount} Gemini schedule update${totalCount === 1 ? '' : 's'}`);
+  };
+
+  const handleAutoGeneratePreheats = () => {
+    const existingIds = new Set(steps.map((s) => s.id));
+    const preheatStepIds = new Set(
+      steps.filter((s) => s.stepKind === 'preheat').map((s) => s.id)
+    );
+    const newPreheats: MealStep[] = [];
+    const depsToAdd = new Map<string, string[]>();
+
+    for (const app of appliances) {
+      if (!app.hasTemperature) continue;
+      const appCookSteps = schedule.steps
+        .filter(
+          (s) =>
+            s.resolvedApplianceId === app.id &&
+            s.stepKind !== 'preheat' &&
+            s.temperature !== undefined
+        )
+        .sort((a, b) => a.startMin - b.startMin);
+
+      if (appCookSteps.length === 0) continue;
+
+      appCookSteps.forEach((s, idx) => {
+        const alreadyHasPreheat = s.dependencies.some((d) => preheatStepIds.has(d));
+        if (alreadyHasPreheat) return;
+
+        const isInitial = idx === 0;
+        const needsMidPreheat = !isInitial && s.transitionBefore?.type === 'preheat';
+        if (!isInitial && !needsMidPreheat) return;
+
+        const targetTemp = s.temperature!;
+        const dur = isInitial
+          ? getInitialPreheatDurationMin(targetTemp, app)
+          : s.transitionBefore!.durationMin;
+        const modeLabel = s.effectiveMode ?? s.applianceMode;
+        let newId = `preheat-${app.id}-${targetTemp}`;
+        let suffix = 2;
+        while (existingIds.has(newId)) {
+          newId = `preheat-${app.id}-${targetTemp}-${suffix++}`;
+        }
+        existingIds.add(newId);
+        preheatStepIds.add(newId);
+
+        const prevStep = !isInitial ? appCookSteps[idx - 1] : undefined;
+        newPreheats.push({
+          id: newId,
+          title: `Preheat ${app.name}${modeLabel ? ` (${modeLabel})` : ''} to ${targetTemp}°F`,
+          dish: 'Appliance Preheats',
+          stepKind: 'preheat',
+          durationMin: dur,
+          applianceId: app.id,
+          applianceMode: modeLabel,
+          modePreference: modeLabel ? 'preferred' : undefined,
+          slotsRequired: app.capacity,
+          temperature: targetTemp,
+          dependencies: prevStep ? [prevStep.id] : [],
+          readyBeforeIds: [],
+          mustFinishByDinner: false,
+          requiresTimer: true,
+          notes: isInitial
+            ? `Initial preheat before ${s.title}`
+            : `Preheat from ${prevStep!.temperature}°F to ${targetTemp}°F before ${s.title}`,
+          status: 'pending',
+          remainingSec: dur * 60,
+          addedMin: 0,
+        });
+
+        const list = depsToAdd.get(s.id) ?? [];
+        list.push(newId);
+        depsToAdd.set(s.id, list);
+      });
+    }
+
+    if (newPreheats.length === 0) {
+      showToast('All temperature-controlled appliances already have preheat steps!');
+      return;
+    }
+
+    pushUndo(`Auto-generate ${newPreheats.length} preheat step${newPreheats.length === 1 ? '' : 's'}`);
+    updateActiveEvent((ev) => {
+      const nextItems = ev.mealItems.map((it) => ({
+        ...it,
+        steps: it.steps.map((s) => {
+          const add = depsToAdd.get(s.id);
+          if (!add) return s;
+          return {
+            ...s,
+            dependencies: Array.from(new Set([...s.dependencies, ...add])),
+          };
+        }),
+      }));
+      const preheatItemId = `preheats-${ev.id}`;
+      const existingItem = nextItems.find(
+        (it) => it.id === preheatItemId || it.name === 'Appliance Preheats'
+      );
+      if (existingItem) {
+        return {
+          ...ev,
+          mealItems: nextItems.map((it) =>
+            it.id === existingItem.id
+              ? { ...it, steps: [...it.steps, ...newPreheats], updatedAt: Date.now() }
+              : it
+          ),
+        };
+      }
+      const now = Date.now();
+      return {
+        ...ev,
+        mealItems: [
+          ...nextItems,
+          {
+            id: preheatItemId,
+            name: 'Appliance Preheats',
+            course: 'Prep / Other',
+            rawNotes: 'Standalone appliance preheat tasks & alerts.',
+            convertedNotes: 'Standalone appliance preheat tasks & alerts.',
+            finishConstraint: { mode: 'after_target' },
+            steps: newPreheats,
+            manualChangeLog: [],
+            updatedAt: now,
+          },
+        ],
+      };
+    });
+    showToast(
+      `Added ${newPreheats.length} standalone preheat step${newPreheats.length === 1 ? '' : 's'} with alerts!`
+    );
   };
 
   // Meal Item (Dish) Actions
@@ -1565,6 +1784,15 @@ export function App() {
               <Bell size={15} /> Kitchen Mode
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ fontSize: '0.73rem', padding: '3px 7px' }}
+                onClick={handleAutoGeneratePreheats}
+                title="Auto-generate standalone appliance preheat steps & start-time alerts"
+              >
+                <Flame size={12} /> Preheats
+              </button>
               <button
                 type="button"
                 className="btn btn-ghost"

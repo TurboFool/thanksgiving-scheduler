@@ -912,6 +912,11 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                           </div>
                           <div className="task-bar-sub">
                             <span className="mono">{formatDuration(s.endMin - s.startMin)}</span>
+                            {s.stepKind === 'preheat' && (
+                              <span className="pill transition-preheat" style={{ padding: '0 4px', fontSize: '0.62rem' }}>
+                                Preheat
+                              </span>
+                            )}
                             {(s.effectiveMode || s.applianceMode) && (
                               <span
                                 className={`pill ${s.modeDecisionNote ? 'mode-fallback' : 'mode'}`}
