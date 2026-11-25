@@ -2867,7 +2867,7 @@ export function App() {
           apiKey={settings.geminiApiKey}
           onOpenSettings={() => setShowSettingsModal(true)}
           onApplyScheduleUpdates={handleApplyScheduleUpdates}
-          onImportMeals={(importedMeals, mode) => {
+          onImportMeals={(importedMeals, mode, saveToLibrary) => {
             const totalSteps = importedMeals.reduce((sum, m) => sum + m.steps.length, 0);
             if (mode === 'add') {
               pushUndo(
@@ -2883,19 +2883,45 @@ export function App() {
                   : `${importedMeals.length} imported dishes`,
                 importedMeals.flatMap((m) => m.steps)
               );
-              showToast(
-                `Added ${importedMeals.length} dish${importedMeals.length === 1 ? '' : 'es'} (${totalSteps} steps) to ${activeEvent.name}`
-              );
             } else {
               pushUndo('Import schedule');
               updateActiveEvent((ev) => ({ ...ev, mealItems: importedMeals }));
               setSelectedStepId(null);
               setSelectedDish(null);
               setMutedAlarms(new Set());
-              showToast(
-                `Imported ${importedMeals.length} dish${importedMeals.length === 1 ? '' : 'es'} (${totalSteps} steps) into ${activeEvent.name}`
-              );
             }
+
+            if (saveToLibrary && importedMeals.length > 0) {
+              const now = Date.now();
+              setWorkspace((prev) => {
+                const nextLib = [...prev.mealLibrary];
+                importedMeals.forEach((m, idx) => {
+                  const existingIdx = nextLib.findIndex(
+                    (l) => l.name.trim().toLowerCase() === m.name.trim().toLowerCase()
+                  );
+                  const libEntry: MealItem = {
+                    ...m,
+                    id: existingIdx >= 0 ? nextLib[existingIdx].id : `lib-${now}-${idx}`,
+                    libraryItemId: undefined,
+                    manualChangeLog: [],
+                    updatedAt: now,
+                  };
+                  if (existingIdx >= 0) {
+                    nextLib[existingIdx] = libEntry;
+                  } else {
+                    nextLib.push(libEntry);
+                  }
+                });
+                return { ...prev, mealLibrary: nextLib, updatedAt: now };
+              });
+            }
+
+            const libNote = saveToLibrary ? ' + saved to Library' : '';
+            showToast(
+              `${mode === 'add' ? 'Added' : 'Imported'} ${importedMeals.length} dish${
+                importedMeals.length === 1 ? '' : 'es'
+              } (${totalSteps} steps) ${mode === 'add' ? 'to' : 'into'} ${activeEvent.name}${libNote}`
+            );
           }}
           onClose={() => setShowGeminiModal(false)}
         />

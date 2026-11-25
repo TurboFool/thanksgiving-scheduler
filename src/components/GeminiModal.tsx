@@ -38,7 +38,7 @@ interface GeminiModalProps {
     updates: ScheduleAdjustmentProposal[],
     newPreheats?: NewPreheatStepProposal[]
   ) => void;
-  onImportMeals: (meals: MealItem[], mode: 'add' | 'replace') => void;
+  onImportMeals: (meals: MealItem[], mode: 'add' | 'replace', saveToLibrary?: boolean) => void;
   onClose: () => void;
 }
 
@@ -61,6 +61,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
 }) => {
   const [tab, setTab] = useState<'evaluate' | 'paste' | 'export'>('evaluate');
   const [mode, setMode] = useState<'add' | 'replace'>(steps.length > 0 ? 'add' : 'replace');
+  const [saveToLibrary, setSaveToLibrary] = useState(false);
   const [menuInput, setMenuInput] = useState(steps.length > 0 ? '' : SAMPLE_MENU_TEXT);
   const [jsonInput, setJsonInput] = useState('');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
@@ -118,7 +119,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
         appliances,
         effectiveMode === 'add' ? steps : []
       );
-      onImportMeals(parsedMeals, effectiveMode);
+      onImportMeals(parsedMeals, effectiveMode, saveToLibrary);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid JSON');
@@ -152,7 +153,7 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
         appliances,
         effectiveMode === 'add' ? steps : []
       );
-      onImportMeals(meals, effectiveMode);
+      onImportMeals(meals, effectiveMode, saveToLibrary);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to call Gemini API');
@@ -649,6 +650,15 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
               </div>
+
+              <label className="dep-check-item" style={{ fontSize: '0.8rem' }}>
+                <input
+                  type="checkbox"
+                  checked={saveToLibrary}
+                  onChange={(e) => setSaveToLibrary(e.target.checked)}
+                />
+                Also add imported meal(s) to Saved Meal Library
+              </label>
             </>
           )}
 

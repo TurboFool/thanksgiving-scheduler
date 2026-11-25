@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.15.1] — 2026-11-25
+
+### Added
+- **Paste Gemini Dish JSON in Add Dish Modals (`MealItemModal.tsx`)**: Added an **Or Paste Gemini Dish JSON** toggle inside `MealItemModal` (available from both the main toolbar's **Add Dish** and the **Meal Library**'s **Add Dish**), parsing Gemini `MealItem` JSON directly into all dish fields and steps.
+- **Save Imported Meals to Library Option (`GeminiModal.tsx`, `App.tsx`)**: Added an **Also add imported meal(s) to Saved Meal Library** checkbox in the Gemini **Import / Add Items** tab that upserts imported dishes into `mealLibrary` upon import.
+
+---
+
 ## [2.15.0] — 2026-11-25
 
 ### Added

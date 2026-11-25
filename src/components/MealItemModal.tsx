@@ -13,6 +13,7 @@ import {
   Scale,
   Check,
   BookOpen,
+  Upload,
 } from 'lucide-react';
 import type {
   Appliance,
@@ -25,6 +26,7 @@ import type {
 import {
   autoFillDishWithGemini,
   fetchRecipeFromUrlWithGemini,
+  parseImportedMeals,
   processMealItemWithGemini,
   reviewScaledRecipeWithGemini,
   type ScaledRecipeReviewResult,
@@ -69,6 +71,7 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
   libraryItems = [],
   appliances,
   otherItems,
+  allEventSteps,
   apiKey,
   onOpenSettings,
   onSave,
@@ -199,6 +202,45 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
     setSteps(cloned.steps);
     setAiProcessedAt(cloned.aiProcessedAt);
     setManualChangeLog([]);
+  };
+
+  const [showJsonImport, setShowJsonImport] = useState(false);
+  const [jsonPasteInput, setJsonPasteInput] = useState('');
+
+  const handleImportJsonDish = () => {
+    setAiError(null);
+    if (!jsonPasteInput.trim()) return;
+    try {
+      const parsed = parseImportedMeals(jsonPasteInput, appliances, allEventSteps);
+      const dish = parsed[0];
+      setName(dish.name);
+      setCourse(dish.course);
+      setServings(dish.servings ?? '');
+      setPortionMultiplier(dish.portionMultiplier ?? 1);
+      setDietaryText((dish.dietaryTags ?? []).join(', '));
+      setSourceUrl(dish.sourceUrl ?? '');
+      setIngredientsText((dish.ingredients ?? []).join('\n'));
+      setRecipeInstructions(dish.recipeInstructions ?? '');
+      setRawNotes(dish.rawNotes);
+      setConvertedNotes(dish.convertedNotes);
+      setPrepAheadNotes(dish.prepAheadNotes ?? '');
+      setFinishMode(dish.finishConstraint.mode);
+      setOffsetMin(dish.finishConstraint.offsetMin ?? 45);
+      setWindowMaxBeforeMin(dish.finishConstraint.windowMaxBeforeMin ?? 180);
+      setWindowMinBeforeMin(dish.finishConstraint.windowMinBeforeMin ?? 30);
+      setSteps(dish.steps);
+      setAiProcessedAt(Date.now());
+      setManualChangeLog([]);
+      setJsonPasteInput('');
+      setShowJsonImport(false);
+      if (parsed.length > 1) {
+        setAiError(
+          `Loaded "${dish.name}" (first of ${parsed.length} dishes in JSON). Use Gemini Tools → Import / Add Items to import multiple dishes at once.`
+        );
+      }
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Invalid Gemini JSON.');
+    }
   };
 
   const baseIngredients = useMemo(
@@ -605,6 +647,39 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
                     {quickFillLoading ? `Filling... (${aiElapsedSec}s)` : 'Auto-Fill Fields'}
                   </button>
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ padding: '2px 6px', fontSize: '0.74rem' }}
+                    onClick={() => setShowJsonImport((v) => !v)}
+                  >
+                    <Upload size={12} />
+                    {showJsonImport ? 'Hide Gemini JSON Paste' : 'Or Paste Gemini Dish JSON'}
+                  </button>
+                </div>
+                {showJsonImport && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                    <textarea
+                      rows={4}
+                      value={jsonPasteInput}
+                      onChange={(e) => setJsonPasteInput(e.target.value)}
+                      placeholder="Paste a Gemini MealItem JSON object (or array) here..."
+                      style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                        onClick={handleImportJsonDish}
+                        disabled={!jsonPasteInput.trim()}
+                      >
+                        <Upload size={12} /> Load Dish from JSON
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
