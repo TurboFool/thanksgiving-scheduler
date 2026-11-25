@@ -34,6 +34,7 @@ import {
 import { formatDuration } from '../scheduler';
 import { scaleIngredients, scaleServingsLabel } from '../recipeScaler';
 import { cloneItemForEvent } from '../workspace';
+import { sendBrowserNotification } from '../notifications';
 import { StepModal } from './StepModal';
 
 interface MealItemModalProps {
@@ -171,6 +172,10 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       setSteps(filled.steps);
       setAiProcessedAt(Date.now());
       setManualChangeLog([]);
+      sendBrowserNotification(`Gemini auto-filled: ${filled.name}`, {
+        body: `${filled.steps.length} step(s) generated.`,
+        tag: 'thymeline-gemini-dish',
+      });
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Failed to auto-fill dish with Gemini.');
     } finally {
@@ -384,6 +389,10 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       setAiProcessedAt(Date.now());
       setManualChangeLog([]);
       setAiGuidance('');
+      sendBrowserNotification(`Gemini processed: ${name || 'Dish'}`, {
+        body: `${result.steps.length} step(s) ready for review.`,
+        tag: 'thymeline-gemini-dish',
+      });
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Failed to process item with Gemini');
     } finally {
@@ -415,6 +424,10 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
       if (!prepAheadNotes.trim() && fetched.prepAheadNotes) {
         setPrepAheadNotes(fetched.prepAheadNotes);
       }
+      sendBrowserNotification(`Recipe pulled: ${fetched.name || name || 'Dish'}`, {
+        body: `${fetched.ingredients.length} ingredient(s) imported from URL.`,
+        tag: 'thymeline-gemini-dish',
+      });
     } catch (err) {
       setAiError(
         err instanceof Error
@@ -441,6 +454,10 @@ export const MealItemModal: React.FC<MealItemModalProps> = ({
         .filter(Boolean)
         .join('\n');
       setScalingReviewText(summaryText);
+      sendBrowserNotification(`Gemini ${portionMultiplier}X review ready`, {
+        body: review.reviewSummary.slice(0, 140),
+        tag: 'thymeline-gemini-dish',
+      });
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Failed to review scaled recipe.');
     } finally {

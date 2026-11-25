@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { X, Settings, Volume2, Bell, KeyRound, Clock } from 'lucide-react';
 import type { AppSettings } from '../types';
 import { soundManager } from '../audio';
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  sendBrowserNotification,
+} from '../notifications';
 
 interface SettingsModalProps {
   settings: AppSettings;
@@ -40,6 +45,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [soundEnabled, setSoundEnabled] = useState(settings.soundEnabled);
   const [voiceEnabled, setVoiceEnabled] = useState(settings.voiceEnabled);
   const [warningAt5Min, setWarningAt5Min] = useState(settings.warningAt5Min);
+  const [browserNotificationsEnabled, setBrowserNotificationsEnabled] = useState(
+    settings.browserNotificationsEnabled !== false
+  );
+  const [notifPermission, setNotifPermission] = useState(getNotificationPermission());
   const [useSimulatedClock, setUseSimulatedClock] = useState(settings.useSimulatedClock);
   const [simMin, setSimMin] = useState(simulatedNowMin);
   const [simOverridden, setSimOverridden] = useState(simTimeOverridden);
@@ -55,6 +64,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         soundEnabled,
         voiceEnabled,
         warningAt5Min,
+        browserNotificationsEnabled,
         useSimulatedClock,
         simulatedNowMin: simMin,
       },
@@ -72,6 +82,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
     soundManager.speak('ThymeLine voice notifications are ready for the kitchen.');
     setVoiceTestStatus('Spoke test announcement.');
+    setTimeout(() => setVoiceTestStatus(null), 2500);
+  };
+
+  const handleTestNotification = async () => {
+    let perm = getNotificationPermission();
+    if (perm === 'default') {
+      perm = await requestNotificationPermission();
+      setNotifPermission(perm);
+    }
+    if (perm === 'unsupported') {
+      setVoiceTestStatus('Browser notifications are not supported here.');
+      return;
+    }
+    if (perm === 'denied') {
+      setVoiceTestStatus('Notifications are blocked in browser site settings.');
+      return;
+    }
+    sendBrowserNotification('ThymeLine Kitchen Alert', {
+      body: 'Browser notifications are enabled for timers, due steps, and Gemini replies.',
+      tag: 'thymeline-test',
+      force: true,
+    });
+    setVoiceTestStatus('Sent test browser notification.');
     setTimeout(() => setVoiceTestStatus(null), 2500);
   };
 
@@ -160,6 +193,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span>Spoken voice announcements (Web Speech API)</span>
               </label>
 
+              <label className="dep-check-item">
+                <input
+                  type="checkbox"
+                  checked={browserNotificationsEnabled}
+                  onChange={async (e) => {
+                    const checked = e.target.checked;
+                    setBrowserNotificationsEnabled(checked);
+                    if (checked && getNotificationPermission() === 'default') {
+                      const perm = await requestNotificationPermission();
+                      setNotifPermission(perm);
+                    }
+                  }}
+                />
+                <span>
+                  Browser notifications (timers, due steps, cloud updates &amp; Gemini responses)
+                  {notifPermission === 'granted' && ' · Granted'}
+                  {notifPermission === 'denied' && ' · Blocked in browser settings'}
+                  {notifPermission === 'default' && ' · Click Test to grant'}
+                </span>
+              </label>
+
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                 <button
                   type="button"
@@ -173,6 +227,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
                 <button type="button" className="btn btn-secondary" onClick={handleTestVoice}>
                   <Volume2 size={14} /> Test Voice
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={handleTestNotification}>
+                  <Bell size={14} /> Test Notification
                 </button>
                 {voiceTestStatus && (
                   <span style={{ fontSize: '0.76rem', color: 'var(--accent-sage)' }}>

@@ -222,6 +222,7 @@ export interface AppSettings {
   soundEnabled: boolean;
   voiceEnabled: boolean;
   warningAt5Min: boolean;
+  browserNotificationsEnabled?: boolean;
   useSimulatedClock: boolean;
   simulatedNowMin: number;
   geminiApiKey: string;

@@ -23,6 +23,7 @@ import {
   type VerifiedScheduleOutcome,
 } from '../gemini';
 import { formatTimeMin } from '../scheduler';
+import { sendBrowserNotification } from '../notifications';
 
 interface GeminiModalProps {
   appliances: Appliance[];
@@ -154,9 +155,18 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
         effectiveMode === 'add' ? steps : []
       );
       onImportMeals(meals, effectiveMode, saveToLibrary);
+      sendBrowserNotification('Gemini schedule ready', {
+        body: `Imported ${meals.length} dish${meals.length === 1 ? '' : 'es'} into your schedule.`,
+        tag: 'thymeline-gemini-generate',
+      });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to call Gemini API');
+      const msg = err instanceof Error ? err.message : 'Failed to call Gemini API';
+      setError(msg);
+      sendBrowserNotification('Gemini schedule generation failed', {
+        body: msg,
+        tag: 'thymeline-gemini-error',
+      });
     } finally {
       setLoading(false);
     }
@@ -199,8 +209,21 @@ export const GeminiModal: React.FC<GeminiModalProps> = ({
       setProposedPreheats(res.newPreheatSteps ?? []);
       setUnresolvedQuestions(res.unresolvedQuestions ?? []);
       setVerifiedOutcome(res.verifiedOutcome ?? null);
+      const totalChanges = res.recommendedUpdates.length + (res.newPreheatSteps?.length ?? 0);
+      sendBrowserNotification('Gemini evaluation ready', {
+        body:
+          totalChanges > 0
+            ? `${totalChanges} proposed adjustment${totalChanges === 1 ? '' : 's'} — ${res.reply.slice(0, 100)}`
+            : res.reply.slice(0, 140),
+        tag: 'thymeline-gemini-eval',
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to evaluate schedule.');
+      const msg = err instanceof Error ? err.message : 'Failed to evaluate schedule.';
+      setError(msg);
+      sendBrowserNotification('Gemini evaluation failed', {
+        body: msg,
+        tag: 'thymeline-gemini-error',
+      });
     } finally {
       setLoading(false);
       setVerifyStatus(null);

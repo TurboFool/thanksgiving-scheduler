@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.16.0] — 2026-11-25
+
+### Added
+- **Browser Notifications (`src/notifications.ts`, `SettingsModal.tsx`, `App.tsx`, `GeminiModal.tsx`, `MealItemModal.tsx`)**:
+  - Added browser `Notification` API support with a **Browser notifications** toggle, permission status indicator, and **Test Notification** button in `SettingsModal`.
+  - Dispatches desktop/browser notifications for 5-minute timer warnings, timer completion alarms, due-to-start steps/preheats, newer cloud backup detection, and Gemini agent responses (schedule evaluation, generation, dish auto-fill/processing, URL import, scaling review, and event scans).
+
+---
+
 ## [2.15.2] — 2026-11-25
 
 ### Added

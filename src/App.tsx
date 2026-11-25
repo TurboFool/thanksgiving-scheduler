@@ -46,6 +46,7 @@ import {
   getInitialPreheatDurationMin,
 } from './scheduler';
 import { soundManager } from './audio';
+import { sendBrowserNotification, setBrowserNotificationsEnabled } from './notifications';
 import {
   reEvaluateEventWithGemini,
   type NewPreheatStepProposal,
@@ -217,6 +218,10 @@ export function App() {
     }
   }, [workspace, settings]);
 
+  useEffect(() => {
+    setBrowserNotificationsEnabled(settings.browserNotificationsEnabled !== false);
+  }, [settings.browserNotificationsEnabled]);
+
   // Silent background check on page load for a newer cloud backup
   useEffect(() => {
     const passcode = settings.syncPasscode.trim();
@@ -229,6 +234,10 @@ export function App() {
         if (res.exists && res.workspace) {
           if (remoteVer > workspace.syncVersion) {
             setCloudUpdateAvailable(res.workspace);
+            sendBrowserNotification('ThymeLine: Newer cloud backup available', {
+              body: `Cloud v${remoteVer} is newer than your local v${workspace.syncVersion}.`,
+              tag: 'thymeline-cloud-update',
+            });
           } else if (
             remoteVer === workspace.syncVersion &&
             lastSyncedAt === 0 &&
@@ -359,11 +368,20 @@ export function App() {
               warned5MinRef.current.add(s.id);
               if (settings.soundEnabled) soundManager.playWarningChime();
               if (settings.voiceEnabled) soundManager.speak(`5 minutes left for ${s.title}`);
+              sendBrowserNotification(`5 minutes left: ${s.title}`, {
+                body: s.dish ? `Dish: ${s.dish}` : undefined,
+                tag: `warn5-${s.id}`,
+              });
             }
 
             if (nextSec === 0) {
               if (settings.soundEnabled) soundManager.playAlarmBell();
               if (settings.voiceEnabled) soundManager.speak(`${s.title} timer is complete!`);
+              sendBrowserNotification(`Timer complete: ${s.title}`, {
+                body: s.dish ? `${s.dish} is ready!` : 'Check your kitchen timer!',
+                tag: `done-${s.id}`,
+                requireInteraction: true,
+              });
             }
 
             const updated = { ...s, remainingSec: nextSec };
@@ -460,6 +478,20 @@ export function App() {
       dueNow.length === 1
         ? `Time to start: ${first.title}`
         : `Time to start: ${first.title} (+${dueNow.length - 1} more)`
+    );
+    sendBrowserNotification(
+      dueNow.length === 1
+        ? `Time to start: ${first.title}`
+        : `${dueNow.length} steps due to start`,
+      {
+        body:
+          dueNow.length === 1
+            ? first.dish
+              ? `Dish: ${first.dish}`
+              : undefined
+            : dueNow.map((d) => d.title).join(', '),
+        tag: 'thymeline-due-now',
+      }
     );
   }, [
     schedule.steps,
@@ -1398,8 +1430,17 @@ export function App() {
         targetDinnerMin
       );
       setScanAiAdvice(advice);
+      sendBrowserNotification('Gemini scan complete', {
+        body: advice.slice(0, 140),
+        tag: 'thymeline-gemini-scan',
+      });
     } catch (err) {
-      setScanNotice(err instanceof Error ? err.message : 'Failed to run AI re-evaluation.');
+      const msg = err instanceof Error ? err.message : 'Failed to run AI re-evaluation.';
+      setScanNotice(msg);
+      sendBrowserNotification('Gemini scan failed', {
+        body: msg,
+        tag: 'thymeline-gemini-error',
+      });
     } finally {
       setScanAiLoading(false);
     }

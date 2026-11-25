@@ -44,6 +44,7 @@ thanksgiving-scheduler/
     ├── scheduler.ts           # Deterministic backward/forward resource-constrained scheduler
     ├── defaultData.ts         # Default kitchen appliances & sample Thanksgiving menu
     ├── audio.ts               # Web Audio API alarm synthesizer & SpeechSynthesis helper
+    ├── notifications.ts       # Browser Notification API helper & permission management
     ├── gemini.ts              # Gemini prompt builder, JSON importer & optional API client
     └── components/
         ├── GanttTimeline.tsx  # Appliance-lane Gantt chart, SVG dependency arrows, NOW playhead

@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   soundEnabled: true,
   voiceEnabled: false,
   warningAt5Min: true,
+  browserNotificationsEnabled: true,
   useSimulatedClock: true,
   simulatedNowMin: 12 * 60 + 30,
   geminiApiKey: '',
