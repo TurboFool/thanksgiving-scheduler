@@ -272,10 +272,45 @@ textarea {
 /* Main Split Workspace */
 .workspace-split {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: var(--kitchen-width, 360px) 6px 1fr;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.split-resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: var(--border-light);
+  position: relative;
+  transition: background 0.15s ease;
+  touch-action: none;
+  z-index: 5;
+}
+
+.split-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.split-resizer:hover,
+.split-resizer.active {
+  background: var(--accent-terracotta-soft);
+}
+
+.split-resizer:hover::after,
+.split-resizer.active::after {
+  opacity: 1;
+  background: var(--accent-terracotta);
 }
 
 @media (max-width: 980px) {
@@ -284,15 +319,19 @@ textarea {
     grid-template-rows: auto 1fr;
     overflow-y: auto;
   }
+
+  .split-resizer {
+    display: none;
+  }
 }
 
 /* Left Panel: Kitchen Mode */
 .kitchen-panel {
   background: var(--bg-surface);
-  border-right: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 

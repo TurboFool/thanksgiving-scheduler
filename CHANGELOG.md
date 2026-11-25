@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.14.7] — 2026-11-25
+
+### Improved
+- **Resizable Kitchen Mode / Timeline Divider (`App.tsx`, `index.css`)**: Added a draggable vertical divider (`.split-resizer`) between Kitchen Mode and the Gantt Timeline (min `360px`, capped at 60% / min `360px` timeline width), persisted in `localStorage` (`thymeline_kitchen_width_v1`), with double-click to reset to `360px`.
+- **Removed Redundant Step Edit Buttons (`App.tsx`)**: Removed the duplicate pencil **Edit Step** icon buttons from Kitchen Mode **Up Next** and **Dish Steps** cards since clicking any step card already opens `StepModal`.
+
+---
+
 ## [2.14.6] — 2026-11-24
 
 ### Improved

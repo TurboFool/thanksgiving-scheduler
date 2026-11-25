@@ -117,6 +117,16 @@ export function App() {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedDish, setSelectedDish] = useState<string | null>(null);
   const [dishesExpanded, setDishesExpanded] = useState(true);
+  const [kitchenWidth, setKitchenWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem('thymeline_kitchen_width_v1'));
+      return Number.isFinite(saved) && saved >= 360 ? saved : 360;
+    } catch {
+      return 360;
+    }
+  });
+  const [isResizingSplit, setIsResizingSplit] = useState(false);
+  const workspaceSplitRef = useRef<HTMLElement | null>(null);
   const [showApplianceModal, setShowApplianceModal] = useState(false);
   const [showGeminiModal, setShowGeminiModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
@@ -250,6 +260,39 @@ export function App() {
       }),
     }));
   };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('thymeline_kitchen_width_v1', String(kitchenWidth));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [kitchenWidth]);
+
+  useEffect(() => {
+    if (!isResizingSplit) return;
+    const handlePointerMove = (e: PointerEvent) => {
+      const container = workspaceSplitRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const raw = e.clientX - rect.left;
+      const maxWidth = Math.max(360, Math.min(Math.floor(rect.width * 0.6), rect.width - 360));
+      setKitchenWidth(Math.round(Math.max(360, Math.min(maxWidth, raw))));
+    };
+    const handlePointerUp = () => {
+      setIsResizingSplit(false);
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isResizingSplit]);
 
   // 1-second timer & alarm loop
   useEffect(() => {
@@ -1510,7 +1553,11 @@ export function App() {
       )}
 
       {/* Main Split Workspace */}
-      <main className="workspace-split">
+      <main
+        ref={workspaceSplitRef}
+        className="workspace-split"
+        style={{ '--kitchen-width': `${kitchenWidth}px` } as React.CSSProperties}
+      >
         {/* Left: Kitchen Mode (Dishes, Active Timers & Up Next) */}
         <aside className="kitchen-panel">
           <div className="panel-header">
@@ -1872,19 +1919,6 @@ export function App() {
                           {s.title}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            style={{ padding: 4 }}
-                            title="Edit full step (duration, appliance, mode, dependencies)"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedStepId(s.id);
-                              setEditingStep({ step: s, parentItemId: activeDishGroup.item.id });
-                            }}
-                          >
-                            <Edit3 size={12} />
-                          </button>
                           {s.status === 'pending' && s.requiresTimer === false && (
                             <>
                               <button
@@ -2192,19 +2226,6 @@ export function App() {
                             {s.title}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              style={{ padding: 4 }}
-                              title="Edit full step (duration, appliance, mode, dependencies)"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedStepId(s.id);
-                                setEditingStep({ step: s });
-                              }}
-                            >
-                              <Edit3 size={12} />
-                            </button>
                             {startsIn <= 0 && (
                               <span
                                 style={{
@@ -2332,6 +2353,20 @@ export function App() {
             )}
           </div>
         </aside>
+
+        <div
+          className={`split-resizer ${isResizingSplit ? 'active' : ''}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Kitchen Mode panel"
+          title="Drag to resize Kitchen Mode panel (double-click to reset)"
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            setIsResizingSplit(true);
+          }}
+          onDoubleClick={() => setKitchenWidth(360)}
+        />
 
         {/* Right: Appliance-Lane Gantt Timeline */}
         <GanttTimeline
