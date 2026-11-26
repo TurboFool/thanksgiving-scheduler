@@ -60,3 +60,9 @@ All scheduling and cascading math runs **100% locally and deterministically** in
   - Event-specific notes (add/edit/track notes per event, and pass them to Gemini during schedule evaluations).
   - Ability to delete events.
   - Ability to copy/duplicate events with an immediate prompt to rename the copy, choose whether to copy notes and other relevant fields, and optionally edit those fields before saving.
+- **Early-Start Pull-Up for Dependent Tasks**:
+  - Configure scheduling so dependent tasks automatically move up when prerequisite steps are started early.
+- **Hideable / Flyout / Popout Gantt Chart**:
+  - Deprioritize the Gantt chart as a primary view and make it collapsible/hideable, revealable as a flyout, or openable in a popout.
+- **Separate Active/Ready vs. Upcoming Columns**:
+  - Split **Active Timers / Activities / Ready Items** into a dedicated column separate from **Upcoming Tasks** so you can easily see what's happening right now alongside what's coming up.
