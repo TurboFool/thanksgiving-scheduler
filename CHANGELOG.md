@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.16.2] — 2026-11-25
+
+### Fixed
+- **Gantt Callout Label Hover Flashing (`index.css`)**: Removed `.gantt-task:hover .gantt-task-callout { display: none; }` which caused narrow-bar callout labels to hide and immediately re-appear in an infinite hover loop when hovered; replaced with a clean shadow/border highlight.
+
+---
+
 ## [2.16.1] — 2026-11-25
 
 ### Improved

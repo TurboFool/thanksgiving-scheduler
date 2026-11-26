@@ -910,7 +910,9 @@ textarea {
 }
 
 .gantt-task:hover .gantt-task-callout {
-  display: none;
+  box-shadow: var(--shadow-md);
+  border-color: rgba(0, 0, 0, 0.32);
+  z-index: 21;
 }
 
 /* Playhead & Dinner Line */
